@@ -6,7 +6,7 @@
 ![Min SDK](https://img.shields.io/badge/Min%20SDK-24-blue)
 ![Language](https://img.shields.io/badge/Language-Kotlin-purple)
 ![UI](https://img.shields.io/badge/UI-Jetpack%20Compose-blueviolet)
-![Version](https://img.shields.io/badge/Version-1.2.2-orange)
+![Version](https://img.shields.io/badge/Version-1.3.1-orange)
 
 ---
 
