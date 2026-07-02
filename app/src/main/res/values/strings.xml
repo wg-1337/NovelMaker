@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">novelmaker</string>
+    <string name="app_name_display">NOVELMAKER</string>
+    <string name="app_logo_desc">应用图标</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_btn_start">开始使用</string>
+    <string name="onboarding_btn_next">下一步</string>
+    <string name="onboarding_btn_grant">授予权限</string>
+    <string name="onboarding_btn_skip">跳过</string>
+    <string name="onboarding_btn_finish">进入应用</string>
+
+    <!-- Welcome -->
+    <string name="onboarding_welcome_title">欢迎使用 NovelMaker</string>
+    <string name="onboarding_welcome_desc">一款轻量级的小说创作工具\n随时随地记录你的灵感，编织你的故事</string>
+
+    <!-- Permission -->
+    <string name="onboarding_permission_title">管理文件权限</string>
+    <string name="onboarding_permission_desc">为了保存你的小说作品和素材\n我们需要你授予管理所有文件的权限\n你的数据仅保存在本地，请放心使用</string>
+    <string name="permission_icon_desc">权限图标</string>
+
+    <!-- Theme -->
+    <string name="onboarding_theme_title">选择主题风格</string>
+    <string name="onboarding_theme_desc">选择一个你喜欢的界面风格</string>
+    <string name="theme_dynamic">跟随壁纸</string>
+    <string name="theme_dynamic_desc">根据壁纸自动适配主题颜色</string>
+    <string name="theme_light">浅色模式</string>
+    <string name="theme_light_desc">清爽明亮的界面</string>
+    <string name="theme_dark">深色模式</string>
+    <string name="theme_dark_desc">护眼省电的暗色界面</string>
+
+    <!-- Home -->
+    <string name="home_empty_title">还没有项目</string>
+    <string name="home_empty_desc">点击右下角的 + 号创建你的第一个小说项目</string>
+    <string name="home_settings">设置</string>
+    <string name="home_create">创建项目</string>
+
+    <!-- Permission Rationale -->
+    <string name="permission_rationale_title">需要存储权限</string>
+    <string name="permission_rationale_message">NovelMaker需要访问您的存储空间来保存小说文件、素材等内容。请点击"允许"以继续使用。</string>
+
+    <!-- Editor -->
+    <string name="editor_back">返回</string>
+    <string name="editor_last_edit">打开最后编辑</string>
+    <string name="editor_new_file">新建文件</string>
+    <string name="editor_toggle_sidebar">文件列表</string>
+    <string name="editor_sidebar_title">项目文件</string>
+    <string name="editor_close_sidebar">关闭</string>
+    <string name="editor_placeholder">选择文件开始编辑</string>
+    <string name="editor_no_last_edit">暂无上次编辑记录</string>
+    <string name="editor_menu_new_folder">新建文件夹</string>
+    <string name="editor_menu_new_file">新建文件</string>
+    <string name="editor_menu_rename">重命名</string>
+    <string name="editor_menu_delete">删除</string>
+    <string name="editor_new_folder_title">新建文件夹</string>
+    <string name="editor_folder_name_hint">请输入文件夹名称</string>
+    <string name="editor_folder_created">文件夹「%s」创建成功</string>
+    <string name="editor_new_file_title">新建文件</string>
+    <string name="editor_file_name_hint">请输入文件名（含扩展名）</string>
+    <string name="editor_file_created">文件「%s」创建成功</string>
+    <string name="editor_rename_title">重命名</string>
+    <string name="editor_rename_hint">输入新名称</string>
+    <string name="editor_delete_title">确认删除</string>
+    <string name="editor_delete_confirm">确定要删除「%s」吗？此操作不可撤销。</string>
+    <string name="editor_delete_confirm_btn">删除</string>
+
+    <!-- Chapter Editor -->
+    <string name="editor_chapter_title_empty">请输入章节名称</string>
+    <string name="editor_new_chapter_title">新建章节</string>
+    <string name="editor_new_chapter_desc">输入新章节的名称</string>
+    <string name="editor_chapter_name_hint">章节名称</string>
+
+    <!-- Create Project -->
+    <string name="create_project_title">创建新项目</string>
+    <string name="create_project_desc">输入小说名称，系统将自动创建项目目录结构</string>
+    <string name="create_project_name_hint">请输入小说名称</string>
+    <string name="create_project_name_placeholder">我的小说</string>
+    <string name="create_project_cancel">取消</string>
+    <string name="create_project_confirm">创建</string>
+    <string name="create_project_structure_title">📁 即将创建的目录结构</string>
+    <string name="create_project_dir_preview">/storage/emulated/0/NovelMaker/\n    └── 我的小说/\n        ├── 大纲/\n        ├── 提示词/\n        └── 小说主体/</string>
+    <string name="create_project_success">项目「%s」创建成功</string>
+    <string name="create_project_error_empty">请输入小说名称</string>
+    <string name="create_project_error_length">小说名称长度应在1-50个字符之间</string>
+    <string name="create_project_error_exists">该项目名称已存在，请换一个名称</string>
+    <string name="create_project_error_dir_failed">创建项目目录失败，请检查存储权限</string>
+
+    <!-- AI Settings -->
+    <string name="ai_settings_title">AI 写作设置</string>
+    <string name="ai_api_url_hint">API 地址</string>
+    <string name="ai_model_hint">模型名称</string>
+    <string name="ai_api_key_hint">API Key</string>
+    <string name="ai_setup_required">请先在设置中配置API Key</string>
+
+    <!-- AI Chat -->
+    <string name="ai_chat_title">AI 写作助手</string>
+    <string name="ai_chat_input_hint">输入你的创作需求...</string>
+    <string name="ai_chat_clear">清空对话</string>
+    <string name="ai_chat_clear_done">对话记录已清空</string>
+    <string name="ai_chat_empty">暂无对话记录</string>
+    <string name="ai_chat_send">发送</string>
+    <string name="ai_no_config">请在设置中配置API后再使用AI功能</string>
+
+    <!-- Chat History Management -->
+    <string name="chat_history_title">对话记录管理</string>
+    <string name="chat_history_subtitle">点击查看各项目的对话记录</string>
+    <string name="chat_history_count">共 %d 个项目的对话记录</string>
+    <string name="chat_history_empty">暂无对话记录</string>
+    <string name="chat_history_delete_confirm">确定要删除该项目的所有对话记录吗？此操作不可撤销。</string>
+    <string name="chat_history_deleted">对话记录已删除</string>
+
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_version">版本 1.0.8</string>
+    <string name="settings_opensource">开源软件</string>
+    <string name="settings_editor_title">编辑器设置</string>
+    <string name="settings_font_size">字体大小</string>
+    <string name="settings_line_spacing">行间距</string>
+    <string name="settings_auto_save">自动保存</string>
+    <string name="settings_auto_save_desc">编辑内容自动保存</string>
+    <string name="settings_ai_title">AI 写作设置</string>
+    <string name="settings_api_url">API 地址</string>
+    <string name="settings_ai_model">模型名称</string>
+    <string name="settings_api_key">API Key</string>
+    <string name="settings_ai_stream">流式回答</string>
+    <string name="settings_ai_stream_desc">逐字显示AI回复内容</string>
+    <string name="settings_ai_panel_mode">AI面板模式</string>
+    <string name="settings_panel_bottom_sheet">底部上拉栏</string>
+    <string name="settings_panel_bottom_sheet_desc">从底部上滑打开AI助手面板</string>
+    <string name="settings_panel_drawer">右侧侧拉栏</string>
+    <string name="settings_panel_drawer_desc">从右侧滑出AI助手面板</string>
+    <string name="settings_ai_tool_rounds">AI工具调用次数</string>
+    <string name="settings_ai_tool_rounds_desc">每次对话允许AI调用的最大工具轮次（-1=无限制）</string>
+    <string name="settings_unlimited">无限制</string>
+    <string name="settings_system_prompt">系统提示词</string>
+
+    <!-- Editor General -->
+    <string name="editor_chapter_count">章节</string>
+    <string name="editor_total_words">总字数</string>
+    <string name="editor_open">打开编辑器</string>
+    <string name="editor_word_count">0 字</string>
+    <string name="editor_undo">撤销</string>
+    <string name="editor_redo">重做</string>
+    <string name="editor_ai_assistant">AI助手</string>
+    <string name="editor_save">保存</string>
+</resources>

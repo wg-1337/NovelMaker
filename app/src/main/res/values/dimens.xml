@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="dot_size">8dp</dimen>
+    <dimen name="dot_spacing">12dp</dimen>
+</resources>

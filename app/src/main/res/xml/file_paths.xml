@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-path
+        name="novelmaker_backups"
+        path="NovelMaker/backups/" />
+    <external-path
+        name="external_root"
+        path="." />
+</paths>

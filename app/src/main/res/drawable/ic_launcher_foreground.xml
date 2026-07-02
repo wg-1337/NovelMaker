@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108.0"
+    android:viewportHeight="108.0">
+
+    <!-- 圆角矩形底板 (12dp 圆角)，粉→紫线性渐变：右上→左下 -->
+    <path
+        android:pathData="M12,0 L96,0 C102.627,0 108,5.373 108,12 L108,96 C108,102.627 102.627,108 96,108 L12,108 C5.373,108 0,102.627 0,96 L0,12 C0,5.373 5.373,0 12,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="108.0"
+                android:startY="0.0"
+                android:endX="0.0"
+                android:endY="108.0">
+                <item android:color="#FFFF7AD1" android:offset="0.0" />
+                <item android:color="#FFD777F5" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 白色 N 字母：左竖 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M43.6,35 L50.8,35 L50.8,73 L43.6,73 Z" />
+
+    <!-- 白色 N 字母：右竖 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M57.2,35 L64.4,35 L64.4,73 L57.2,73 Z" />
+
+    <!-- 白色 N 字母：斜线（连接左竖底部到右竖顶部） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M43.6,73 L50.8,73 L57.2,35 L64.4,35 Z" />
+
+</vector>
