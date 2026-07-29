@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+CHANGELOG.md
+/release
