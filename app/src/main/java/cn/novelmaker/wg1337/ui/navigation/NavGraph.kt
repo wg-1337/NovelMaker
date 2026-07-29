@@ -7,7 +7,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import cn.novelmaker.wg1337.ui.editor.ChapterEditScreen
-import cn.novelmaker.wg1337.ui.editor.EditorScreen
 import cn.novelmaker.wg1337.ui.home.HomeScreen
 import cn.novelmaker.wg1337.ui.onboarding.OnboardingScreen
 import cn.novelmaker.wg1337.ui.settings.SettingsScreen
@@ -34,8 +33,8 @@ fun NovelMakerNavGraph(
 
         composable(Routes.HOME) {
             HomeScreen(
-                onProjectClick = { projectName ->
-                    navController.navigate(Routes.editor(projectName))
+                onProjectClick = { projectName, projectId ->
+                    navController.navigate(Routes.chapterEdit(projectName, projectId))
                 },
                 onSettingsClick = {
                     navController.navigate(Routes.SETTINGS)
@@ -46,20 +45,6 @@ fun NovelMakerNavGraph(
         composable(Routes.SETTINGS) {
             SettingsScreen(
                 onBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = Routes.EDITOR,
-            arguments = listOf(navArgument("projectName") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val projectName = backStackEntry.arguments?.getString("projectName") ?: ""
-            EditorScreen(
-                projectName = projectName,
-                onBack = { navController.popBackStack() },
-                onOpenEditor = { projName, projId ->
-                    navController.navigate(Routes.chapterEdit(projName, projId))
-                }
             )
         }
 

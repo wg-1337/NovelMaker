@@ -6,11 +6,8 @@ package cn.novelmaker.wg1337.ui.navigation
 object Routes {
     const val ONBOARDING = "onboarding"
     const val HOME = "home"
-    const val EDITOR = "editor/{projectName}"
     const val CHAPTER_EDIT = "chapterEdit/{projectName}?projectId={projectId}?chapterId={chapterId}?filePath={filePath}"
     const val SETTINGS = "settings"
-
-    fun editor(projectName: String) = "editor/$projectName"
 
     fun chapterEdit(
         projectName: String,

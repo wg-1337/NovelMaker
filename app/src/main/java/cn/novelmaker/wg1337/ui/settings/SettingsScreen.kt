@@ -33,7 +33,6 @@ fun SettingsScreen(onBack: () -> Unit) {
     var themeMode by remember { mutableIntStateOf(prefsManager.themeMode) }
     var fontSize by remember { mutableIntStateOf(prefsManager.editorFontSize.toInt()) }
     var lineSpacing by remember { mutableFloatStateOf(prefsManager.editorLineSpacing) }
-    var autoSave by remember { mutableStateOf(prefsManager.isAutoSaveEnabled) }
     var aiBaseUrl by remember { mutableStateOf(prefsManager.aiBaseUrl ?: "https://api.deepseek.com") }
     var aiModel by remember { mutableStateOf(prefsManager.aiModel ?: "deepseek-chat") }
     var aiApiKey by remember { mutableStateOf(prefsManager.aiApiKey ?: "") }
@@ -91,7 +90,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             ) {
                 Column(Modifier.padding(16.dp)) {
                     Text("NovelMaker", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("版本 1.4.0", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("版本 1.4.1", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("点击访问项目仓库 →", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
             }
@@ -127,15 +126,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                         onValueChange = { lineSpacing = it; prefsManager.editorLineSpacing = it },
                         valueRange = 1f..5f
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column {
-                            Text("自动保存", style = MaterialTheme.typography.bodyLarge)
-                            Text("编辑内容自动保存", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(checked = autoSave, onCheckedChange = { autoSave = it; prefsManager.isAutoSaveEnabled = it })
-                    }
-                    Spacer(Modifier.height(8.dp))
                     HorizontalDivider()
                     var maxFinalized by remember { mutableStateOf(prefsManager.maxFinalizedChapters.toString()) }
                     var bulkEvict by remember { mutableStateOf(prefsManager.bulkEvictChapters.toString()) }

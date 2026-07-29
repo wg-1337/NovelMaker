@@ -48,6 +48,9 @@ import cn.novelmaker.wg1337.ui.ai.AiChatUi
 import cn.novelmaker.wg1337.ui.ai.AiChatViewModel
 import cn.novelmaker.wg1337.ui.ai.FinalizedManager
 import cn.novelmaker.wg1337.ui.home.AppContextHolder
+import cn.novelmaker.wg1337.ui.tutorial.EditorTutorialOverlay
+import cn.novelmaker.wg1337.ui.tutorial.TutorialStep
+import cn.novelmaker.wg1337.utils.PreferencesManager
 import cn.novelmaker.wg1337.utils.ProjectStorageManager
 import java.io.File
 
@@ -76,6 +79,8 @@ fun ChapterEditScreen(
 
     var textFieldValue by remember { mutableStateOf(TextFieldValue(content)) }
     var showAiPanel by remember { mutableStateOf(false) }
+    var projectChapterCount by remember { mutableIntStateOf(0) }
+    var projectWordCount by remember { mutableIntStateOf(0) }
     var showCreateDialog by remember { mutableStateOf<File?>(null) }
     var showRenameDialog by remember { mutableStateOf<File?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<File?>(null) }
@@ -83,7 +88,13 @@ fun ChapterEditScreen(
     var newFolderParent by remember { mutableStateOf<File?>(null) }
     var showFileMenu by remember { mutableStateOf<File?>(null) }
     var showUnmarkConfirm by remember { mutableStateOf<Pair<File, String>?>(null) }
+    var showQuickSettings by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    // ── 新手教程（编辑器部分） ──
+    val editorPrefsManager = remember { PreferencesManager(context) }
+    var showEditorTutorial by remember { mutableStateOf(false) }
+    var editorTutorialStep by remember { mutableIntStateOf(0) }
     val finalizedManager = aiViewModel.finalizedManager  // 与 AI 共享同一实例
     var finalizedFiles by remember { mutableStateOf(finalizedManager.getFinalizedFiles(projectId)) }
 
@@ -92,9 +103,58 @@ fun ChapterEditScreen(
         if (!showAiPanel) finalizedFiles = finalizedManager.getFinalizedFiles(projectId)
     }
 
+    // 编辑器教程步骤定义
+    val editorTutorialSteps = remember {
+        listOf(
+            TutorialStep(
+                title = "📁 文件管理",
+                description = "点击顶部工具栏的 ☰ 图标，打开文件树侧边栏。" +
+                        "\n\n在这里可以：\n" +
+                        "• 浏览项目的目录结构\n" +
+                        "• 新建/重命名/删除文件和文件夹\n" +
+                        "• 标记定稿章节（📑 图标），优化 AI 对话效率"
+            ),
+            TutorialStep(
+                title = "↩️ 撤销与重做",
+                description = "工具栏的 ↩ 和 ↪ 按钮支持撤销和重做操作。" +
+                        "\n\n最多可回溯 30 步编辑历史，写错了随时回退。"
+            ),
+            TutorialStep(
+                title = "🤖 AI 写作助手",
+                description = "点击 ✨ 按钮打开 AI 助手面板。" +
+                        "\n\n• Plan 模式：让 AI 帮你规划大纲和情节\n" +
+                        "• Agent 模式：AI 直接撰写章节正文\n" +
+                        "• AI 还能读取和修改你的项目文件"
+            ),
+            TutorialStep(
+                title = "💾 保存与设置",
+                description = "工具栏右侧还有两个实用按钮：\n\n" +
+                        "• 💾 保存：手动保存当前编辑内容\n" +
+                        "• ⚙️ 快捷设置：快速调整字体大小和行间距\n\n" +
+                        "提示：系统也支持自动保存，可以在设置中开启。"
+            ),
+            TutorialStep(
+                title = "✍️ 开始写作",
+                description = "在最中央的编辑区域直接输入文字，开始你的创作。" +
+                        "\n\n编辑器特点：\n" +
+                        "• 左侧显示行号，方便定位\n" +
+                        "• 双指捏合可缩放字体大小\n" +
+                        "• 顶部实时显示字数统计"
+            )
+        )
+    }
+
     LaunchedEffect(projectName) {
         viewModel.init(projectName, projectId, chapterId, filePath)
         aiViewModel.init(projectName, projectId, { content }, { title.ifEmpty { projectName } })
+        // 加载项目统计信息
+        val (chapters, words) = ProjectStorageManager.getProjectStats(projectName)
+        projectChapterCount = chapters
+        projectWordCount = words
+        // 检查是否需要显示编辑器教程
+        if (!editorPrefsManager.isEditorTutorialCompleted) {
+            showEditorTutorial = true
+        }
     }
 
     // 同步 content → textFieldValue（撤销/重做或加载新文件时），光标放在开头
@@ -128,7 +188,9 @@ fun ChapterEditScreen(
                     onNewFolder = { newFolderParent = null; showNewFolderDialog = true },
                     onNewFile = { showCreateDialog = null; showCreateDialog = ProjectStorageManager.getProjectDir(projectName) },
                     projectName = projectName,
-                    finalizedFiles = finalizedFiles
+                    finalizedFiles = finalizedFiles,
+                    chapterCount = projectChapterCount,
+                    wordCount = projectWordCount
                 )
             }
         }
@@ -149,11 +211,15 @@ fun ChapterEditScreen(
                             }
                         },
                         actions = {
-                            IconButton(onClick = { viewModel.toggleFileTree() }) { Icon(Icons.Default.Menu, "文件列表") }
-                            IconButton(onClick = { viewModel.undo() }, enabled = canUndo) { Icon(Icons.AutoMirrored.Filled.Undo, "撤销") }
-                            IconButton(onClick = { viewModel.redo() }, enabled = canRedo) { Icon(Icons.AutoMirrored.Filled.Redo, "重做") }
-                            IconButton(onClick = { showAiPanel = true }) { Icon(Icons.Default.AutoAwesome, "AI助手", tint = MaterialTheme.colorScheme.primary) }
-                            IconButton(onClick = { viewModel.saveContent() }) { Icon(Icons.Default.Save, "保存", tint = MaterialTheme.colorScheme.primary) }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { viewModel.toggleFileTree() }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.Menu, "文件列表", Modifier.size(20.dp)) }
+                                IconButton(onClick = { viewModel.undo() }, enabled = canUndo, modifier = Modifier.size(36.dp)) { Icon(Icons.AutoMirrored.Filled.Undo, "撤销", Modifier.size(20.dp)) }
+                                IconButton(onClick = { viewModel.redo() }, enabled = canRedo, modifier = Modifier.size(36.dp)) { Icon(Icons.AutoMirrored.Filled.Redo, "重做", Modifier.size(20.dp)) }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { showAiPanel = true }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.AutoAwesome, "AI助手", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) }
+                                IconButton(onClick = { showQuickSettings = true }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.Settings, "快捷设置", Modifier.size(20.dp)) }
+                            }
                         }
                     )
                 }
@@ -294,6 +360,63 @@ fun ChapterEditScreen(
             dismissButton = { TextButton(onClick = { showNewFolderDialog = false }) { Text("取消") } }
         )
     }
+
+    // ── 快捷设置面板 ──
+    if (showQuickSettings) {
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { showQuickSettings = false },
+            sheetState = sheetState
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text("编辑器设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(16.dp))
+
+                // 字体大小
+                Text("字体大小：${fontSize.toInt()}", style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(4.dp))
+                Slider(
+                    value = fontSize,
+                    onValueChange = { viewModel.setFontSize(it) },
+                    valueRange = 10f..32f,
+                    steps = 21
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                // 行间距
+                Text("行间距：${"%.1f".format(lineSpacing)}", style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(4.dp))
+                Slider(
+                    value = lineSpacing,
+                    onValueChange = { viewModel.setLineSpacing(it) },
+                    valueRange = 1f..5f
+                )
+            }
+        }
+    }
+
+    // ── 编辑器新手教程遮罩 ──
+    if (showEditorTutorial) {
+        EditorTutorialOverlay(
+            steps = editorTutorialSteps,
+            currentStep = editorTutorialStep,
+            onNext = { editorTutorialStep++ },
+            onSkip = {
+                editorPrefsManager.isEditorTutorialCompleted = true
+                showEditorTutorial = false
+            },
+            onFinish = {
+                editorPrefsManager.isEditorTutorialCompleted = true
+                showEditorTutorial = false
+            }
+        )
+    }
 }
 
 // ── 文件树面板 ──
@@ -307,7 +430,9 @@ private fun FileTreePanel(
     onNewFolder: () -> Unit,
     onNewFile: () -> Unit,
     projectName: String,
-    finalizedFiles: Set<String>
+    finalizedFiles: Set<String>,
+    chapterCount: Int = 0,
+    wordCount: Int = 0
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -327,6 +452,15 @@ private fun FileTreePanel(
                     Icon(Icons.Default.Refresh, "刷新", Modifier.size(20.dp))
                 }
             }
+        }
+        // 项目统计信息
+        if (chapterCount > 0 || wordCount > 0) {
+            Text(
+                "${chapterCount} 章 · ${cn.novelmaker.wg1337.ui.home.formatWordCount(wordCount)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+            )
         }
         HorizontalDivider()
         LazyColumn(modifier = Modifier.fillMaxSize()) {

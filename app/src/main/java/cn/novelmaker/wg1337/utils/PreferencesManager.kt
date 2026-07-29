@@ -21,6 +21,14 @@ class PreferencesManager(context: Context) {
         get() = prefs.getBoolean(KEY_ONBOARDING_COMPLETED, false)
         set(value) = prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, value).apply()
 
+    var isTutorialCompleted: Boolean
+        get() = prefs.getBoolean("tutorial_completed", false)
+        set(value) = prefs.edit().putBoolean("tutorial_completed", value).apply()
+
+    var isEditorTutorialCompleted: Boolean
+        get() = prefs.getBoolean("editor_tutorial_completed", false)
+        set(value) = prefs.edit().putBoolean("editor_tutorial_completed", value).apply()
+
     var themeMode: Int
         get() = prefs.getInt(KEY_THEME_MODE, THEME_DYNAMIC)
         set(value) = prefs.edit().putInt(KEY_THEME_MODE, value).apply()

@@ -1,5 +1,8 @@
 package cn.novelmaker.wg1337.ui.home
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,14 +21,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cn.novelmaker.wg1337.data.model.Project
+import cn.novelmaker.wg1337.ui.tutorial.TutorialOverlay
+import cn.novelmaker.wg1337.ui.tutorial.TutorialStep
 import cn.novelmaker.wg1337.utils.BackupManager
+import cn.novelmaker.wg1337.utils.PreferencesManager
 import cn.novelmaker.wg1337.utils.ProjectStorageManager
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onProjectClick: (String) -> Unit,
+    onProjectClick: (String, String) -> Unit,
     onSettingsClick: () -> Unit,
     viewModel: HomeViewModel = viewModel()
 ) {
@@ -37,7 +43,43 @@ fun HomeScreen(
     var backupMsg by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) { viewModel.loadProjects() }
+    // ── 新手教程 ──
+    val prefsManager = remember { PreferencesManager(context) }
+    var showTutorial by remember { mutableStateOf(false) }
+    var tutorialStep by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        viewModel.loadProjects()
+    }
+
+    // 首次加载后检查是否需要显示教程
+    LaunchedEffect(projects) {
+        if (!prefsManager.isTutorialCompleted && !viewModel.isLoading.value) {
+            showTutorial = true
+        }
+    }
+
+    // 教程步骤定义
+    val homeTutorialSteps = remember {
+        listOf(
+            TutorialStep(
+                title = "欢迎使用 NovelMaker",
+                description = "一款轻量级的小说创作工具，支持纯文本编辑和 AI 辅助写作。" +
+                        "\n\n接下来我会带你快速了解如何使用。"
+            ),
+            TutorialStep(
+                title = "创建项目",
+                description = "点击右下角的 + 按钮，输入小说名称即可创建项目。" +
+                        "\n\n系统会自动创建「大纲」「提示词」「小说主体」目录结构。"
+            ),
+            TutorialStep(
+                title = "开始创作",
+                description = "创建项目后，点击项目卡片进入编辑器。" +
+                        "\n\n点击卡片右侧的 ⋮ 按钮可以重命名、备份或删除项目。" +
+                        "\n\n右上角的 ⚙️ 按钮可以进入设置页面。"
+            )
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -94,7 +136,7 @@ fun HomeScreen(
                 items(projects, key = { it.id }) { project ->
                     ProjectCard(
                         project = project,
-                        onClick = { onProjectClick(project.name) },
+                        onClick = { onProjectClick(project.name, project.id) },
                         onRename = { showRenameDialog = project },
                         onDelete = { showDeleteConfirm = project },
                         onBackup = { showBackupDialog = project }
@@ -188,6 +230,29 @@ fun HomeScreen(
             text = { Text(msg) },
             confirmButton = { TextButton(onClick = { backupMsg = null }) { Text("确定") } }
         )
+    }
+
+    // ── 新手教程遮罩 ──
+    if (showTutorial) {
+        AnimatedVisibility(
+            visible = showTutorial,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            TutorialOverlay(
+                steps = homeTutorialSteps,
+                currentStep = tutorialStep,
+                onNext = { tutorialStep++ },
+                onSkip = {
+                    prefsManager.isTutorialCompleted = true
+                    showTutorial = false
+                },
+                onFinish = {
+                    prefsManager.isTutorialCompleted = true
+                    showTutorial = false
+                }
+            )
+        }
     }
 }
 
