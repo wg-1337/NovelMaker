@@ -87,6 +87,15 @@ class PreferencesManager(context: Context) {
         return prefs.getInt("ai_mode_$projectId", 0) // 默认 PLAN
     }
 
+    // 项目级 AI 标签页：记录上次激活的标签页 id（默认 1）
+    fun saveActiveAiTab(projectId: String, tabId: Int) {
+        prefs.edit().putInt("ai_active_tab_$projectId", tabId).apply()
+    }
+
+    fun getActiveAiTab(projectId: String): Int {
+        return prefs.getInt("ai_active_tab_$projectId", 1)
+    }
+
     // 编辑器：最大定稿章节数（0 = 无限制）
     var maxFinalizedChapters: Int
         get() = prefs.getInt("max_finalized_chapters", 0)

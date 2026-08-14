@@ -17,7 +17,10 @@ import cn.novelmaker.wg1337.utils.ProjectStorageManager
 
 class AiChatViewModel : ViewModel() {
 
-    companion object { private const val TAG = "AiChatVM" }
+    companion object {
+        private const val TAG = "AiChatVM"
+        const val MAX_TABS = 5
+    }
 
     private val context = AppContextHolder.context
     private val prefsManager = PreferencesManager(context)
@@ -44,6 +47,15 @@ class AiChatViewModel : ViewModel() {
     private val _showResume = MutableStateFlow(false)
     val showResume: StateFlow<Boolean> = _showResume.asStateFlow()
 
+    /** 文件变更版本号：AI 每次成功写/删/标记文件后 +1，供编辑器刷新文件树 */
+    private val _fileChangeVersion = MutableStateFlow(0)
+    val fileChangeVersion: StateFlow<Int> = _fileChangeVersion.asStateFlow()
+
+    // ── 标签页（每项目最多 MAX_TABS 个独立会话） ──
+    // 合并为单一 State，避免 tabs / activeTabId 双 StateFlow 收集竞态
+    private val _tabState = MutableStateFlow(AiTabState(listOf(AiChatTab(1, "对话1")), 1))
+    val tabState: StateFlow<AiTabState> = _tabState.asStateFlow()
+
     @Volatile private var accumulatedContent = ""
     @Volatile private var accumulatedReasoning = ""
 
@@ -60,7 +72,48 @@ class AiChatViewModel : ViewModel() {
         if (projectId.isNotEmpty()) {
             val savedMode = prefsManager.getAiMode(projectId)
             _currentMode.value = if (savedMode == 1) AiMode.AGENT else AiMode.PLAN
-            _messages.value = chatHistoryManager.loadChatHistory(projectId)
+            // 发现已有标签页（含旧数据迁移）
+            val usedIds = chatHistoryManager.getUsedTabIds(projectId)
+            // 恢复上次激活的标签页（若已不存在则回退到第一个）
+            val savedTab = prefsManager.getActiveAiTab(projectId)
+            val active = if (usedIds.contains(savedTab)) savedTab else usedIds.first()
+            _tabState.value = AiTabState(usedIds.map { AiChatTab(it, "对话$it") }, active)
+            _messages.value = chatHistoryManager.loadChatHistory(projectId, active)
+        }
+    }
+
+    /** 新建标签页（最多 MAX_TABS 个）；AI 处理中禁止 */
+    fun addTab() {
+        if (_isProcessing.value) return
+        val current = _tabState.value
+        if (current.tabs.size >= MAX_TABS) return
+        val newId = (1..MAX_TABS).firstOrNull { id -> current.tabs.none { it.id == id } } ?: return
+        saveCurrentChat()
+        _tabState.value = AiTabState(current.tabs + AiChatTab(newId, "对话$newId"), newId)
+        _messages.value = emptyList()
+        _showResume.value = false
+        accumulatedContent = ""; accumulatedReasoning = ""
+        // 一个对话一个记录文件：空对话也立即创建，重启后对话不丢失、可被管理/备份
+        if (projectId.isNotEmpty()) {
+            chatHistoryManager.ensureTabFile(projectId, newId)
+            prefsManager.saveActiveAiTab(projectId, newId)
+        }
+    }
+
+    /** 切换到指定标签页；AI 处理中禁止 */
+    fun switchTab(tabId: Int) {
+        if (_isProcessing.value) return
+        val current = _tabState.value
+        if (tabId == current.activeTabId) return
+        if (current.tabs.none { it.id == tabId }) return
+        saveCurrentChat()
+        _tabState.value = current.copy(activeTabId = tabId)
+        _messages.value = chatHistoryManager.loadChatHistory(projectId, tabId)
+        _showResume.value = false
+        accumulatedContent = ""; accumulatedReasoning = ""
+        if (projectId.isNotEmpty()) {
+            chatHistoryManager.ensureTabFile(projectId, tabId) // 首次切换到的对话也确保有记录文件
+            prefsManager.saveActiveAiTab(projectId, tabId)
         }
     }
 
@@ -80,17 +133,14 @@ class AiChatViewModel : ViewModel() {
 
     fun resumeFromInterruption() {
         _messages.update { if (it.lastOrNull()?.role == "system") it.dropLast(1) else it }
+        _isProcessing.value = true
+        _showResume.value = false
         performRequest(retry = true)
-    }
-
-    fun clearChat() {
-        _isProcessing.value = false; accumulatedContent = ""; accumulatedReasoning = ""
-        _messages.value = emptyList(); _showResume.value = false
-        if (projectId.isNotEmpty()) chatHistoryManager.deleteChatHistory(projectId)
     }
 
     fun editMessage(index: Int, newContent: String) {
         _messages.update { msgs -> msgs.toMutableList().also { if (index in it.indices) it[index] = it[index].copy(content = newContent) } }
+        saveCurrentChat()
     }
 
     /**
@@ -112,15 +162,22 @@ class AiChatViewModel : ViewModel() {
 
     fun deleteMessage(index: Int) {
         _messages.update { msgs -> msgs.toMutableList().also { if (index in it.indices) it.removeAt(index) } }
+        saveCurrentChat()
     }
 
     private fun performRequest(retry: Boolean) {
-        val apiKey = prefsManager.aiApiKey ?: return
+        val apiKey = prefsManager.aiApiKey
+        if (apiKey.isNullOrEmpty()) {
+            // 未配置 API Key：复位处理状态，避免永久卡在“AI 思考中”
+            _isProcessing.value = false
+            _showResume.value = false
+            return
+        }
         val baseUrl = prefsManager.aiBaseUrl ?: "https://api.deepseek.com"
         val model = prefsManager.aiModel ?: "deepseek-chat"
         val useStream = prefsManager.aiStreamEnabled
         val maxRounds = prefsManager.aiMaxToolRounds
-        val fTools = AiFileTools(projectName, projectId, _currentMode.value)
+        val fTools = AiFileTools(projectName, projectId, _currentMode.value) { _fileChangeVersion.update { it + 1 } }
         val tools = fTools.getToolDefinitions()
         val apiClient = AiApiClient(apiKey = apiKey, baseUrl = baseUrl, model = model, thinkingEnabled = true)
         lastApiClient = apiClient; lastFTools = fTools; lastTools = tools; lastMaxToolRounds = maxRounds
@@ -201,6 +258,8 @@ class AiChatViewModel : ViewModel() {
         val sb = StringBuilder()
         // 基础提示词 + Plan 阶段追加
         sb.append(systemPromptManager.getFullPrompt(projectId))
+        // 联网搜索说明（两种模式通用）
+        sb.append("\n\n【联网搜索】当你遇到不了解的信息、不确定的事实、没见过的文体/写作风格或概念，或用户需要最新资料、范文示例时，使用 webSearch 工具联网搜索。优先使用 bing 搜索引擎（默认），google 作为备选。搜索关键词由你根据用户需求自行拟定，可以一次搜索多个关键词，然后综合搜索结果回答用户。")
         // Plan 模式指示
         if (_currentMode.value == AiMode.PLAN) {
             sb.append("\n\n【当前模式：Plan 计划模式】\n")
@@ -279,6 +338,8 @@ class AiChatViewModel : ViewModel() {
     }
 
     fun onUserChoice(choiceText: String) {
+        if (_isProcessing.value) return  // 防止重复/并发请求
+        if (prefsManager.aiApiKey.isNullOrEmpty()) return  // 未配置 Key 时静默忽略，避免卡死
         _messages.update { it + AiChatMessage(role = "user", content = choiceText) }
         _isProcessing.value = true
         _showResume.value = false
@@ -310,8 +371,22 @@ class AiChatViewModel : ViewModel() {
     }
 
     private fun saveCurrentChat() {
-        if (_messages.value.isNotEmpty() && projectId.isNotEmpty()) chatHistoryManager.saveChatHistory(projectId, _messages.value)
+        if (_messages.value.isNotEmpty() && projectId.isNotEmpty()) {
+            chatHistoryManager.saveChatHistory(projectId, _tabState.value.activeTabId, _messages.value)
+        }
     }
 
     override fun onCleared() { super.onCleared(); saveCurrentChat() }
 }
+
+/** AI 标签页（每项目最多 5 个独立会话） */
+data class AiChatTab(
+    val id: Int,        // 1..5，稳定标识
+    val name: String    // "对话1" .. "对话5"
+)
+
+/** AI 标签页整体状态（tabs + 当前激活 id，合并为单一 State 供 UI 原子读取） */
+data class AiTabState(
+    val tabs: List<AiChatTab>,
+    val activeTabId: Int
+)

@@ -9,6 +9,8 @@ import cn.novelmaker.wg1337.data.repository.ProjectRepository
 import cn.novelmaker.wg1337.ui.home.AppContextHolder
 import cn.novelmaker.wg1337.utils.PreferencesManager
 import cn.novelmaker.wg1337.utils.ProjectStorageManager
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +58,9 @@ class EditorViewModel : ViewModel() {
     private val undoStack = ArrayDeque<String>()
     private val redoStack = ArrayDeque<String>()
     private var isUndoRedo = false
+
+    // ── 自动保存 ──
+    private var autoSaveJob: Job? = null
 
     private val _canUndo = MutableStateFlow(false)
     val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
@@ -133,11 +138,13 @@ class EditorViewModel : ViewModel() {
     fun onContentChanged(newContent: String) {
         if (isUndoRedo) return
         _isModified.value = true
+        _content.value = newContent  // 同步内容，保证保存/AI上下文始终为最新
         redoStack.clear()
         undoStack.addLast(newContent)
         while (undoStack.size > MAX_UNDO_SIZE) undoStack.removeFirst()
         updateUndoRedoState()
         updateWordCount()
+        scheduleAutoSave()
     }
 
     fun undo() {
@@ -149,6 +156,7 @@ class EditorViewModel : ViewModel() {
         _isModified.value = true
         isUndoRedo = false
         updateUndoRedoState()
+        scheduleAutoSave()
     }
 
     fun redo() {
@@ -160,6 +168,16 @@ class EditorViewModel : ViewModel() {
         _isModified.value = true
         isUndoRedo = false
         updateUndoRedoState()
+        scheduleAutoSave()
+    }
+
+    /** 停止输入 1.5 秒后自动保存（debounce），避免每次按键都写盘 */
+    private fun scheduleAutoSave() {
+        autoSaveJob?.cancel()
+        autoSaveJob = viewModelScope.launch {
+            delay(1500)
+            if (_isModified.value) saveContent()
+        }
     }
 
     private fun updateUndoRedoState() {
@@ -287,6 +305,7 @@ class EditorViewModel : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
+        autoSaveJob?.cancel()
         if (_isModified.value) saveContent()
     }
 }

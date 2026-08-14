@@ -23,6 +23,7 @@ import cn.novelmaker.wg1337.data.repository.ProjectRepository
 import cn.novelmaker.wg1337.utils.PreferencesManager
 import android.content.Intent
 import android.net.Uri
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.clickable
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,12 +72,15 @@ fun SettingsScreen(onBack: () -> Unit) {
             SectionTitle("界面主题")
             ThemeCard(label = "跟随壁纸", desc = "根据壁纸自动适配主题颜色", selected = themeMode == 0, onClick = {
                 themeMode = 0; prefsManager.themeMode = 0
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
             })
             ThemeCard(label = "浅色模式", desc = "清爽明亮的界面", selected = themeMode == 1, onClick = {
                 themeMode = 1; prefsManager.themeMode = 1
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
             })
             ThemeCard(label = "深色模式", desc = "护眼省电的暗色界面", selected = themeMode == 2, onClick = {
                 themeMode = 2; prefsManager.themeMode = 2
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             })
 
             Spacer(Modifier.height(8.dp))
@@ -90,7 +94,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             ) {
                 Column(Modifier.padding(16.dp)) {
                     Text("NovelMaker", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("版本 1.4.1", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("版本 1.5.0", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("点击访问项目仓库 →", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
             }
@@ -264,22 +268,65 @@ private fun ChatHistoryDialog(onDismiss: () -> Unit) {
         val allProjects = projectRepo.getAllProjects()
         projects.associateWith { pid -> allProjects.find { it.id == pid }?.name ?: pid }
     }
-    var confirm by remember { mutableStateOf<String?>(null) }
+    // 每个项目的对话数量
+    val tabCountMap = remember(projects) {
+        projects.associateWith { pid -> manager.getUsedTabIds(pid).size }
+    }
+    var expandedProject by remember { mutableStateOf<String?>(null) }
+    var confirmProject by remember { mutableStateOf<String?>(null) }
+    var confirmTab by remember { mutableStateOf<Pair<String, Int>?>(null) }
+
+    // 展开项目的各对话信息（对话N + 消息数），仅展开时计算
+    val tabInfo = remember(expandedProject) {
+        expandedProject?.let { pid ->
+            manager.getUsedTabIds(pid).map { tabId -> Triple(tabId, "对话$tabId", manager.getChatHistoryCount(pid, tabId)) }
+        } ?: emptyList()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("聊天记录管理") },
         text = {
-            if (projects.isEmpty()) Text("暂无对话记录")
-            else Column {
-                projects.forEach { pid ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(nameMap[pid] ?: pid, style = MaterialTheme.typography.bodyMedium)
-                            Text("ID: $pid", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        IconButton(onClick = { confirm = pid }, Modifier.size(32.dp)) {
-                                Icon(Icons.Default.Close, "删除", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+            if (projects.isEmpty()) {
+                Text("暂无对话记录")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("每个项目最多 5 个对话，点项目名展开可查看并逐个删除。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    projects.forEach { pid ->
+                        val isExpanded = expandedProject == pid
+                        Column {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { expandedProject = if (isExpanded) null else pid }
+                                    .padding(vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(nameMap[pid] ?: pid, style = MaterialTheme.typography.bodyMedium)
+                                    Text("${tabCountMap[pid] ?: 1} 个对话", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Icon(if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                IconButton(onClick = { confirmProject = pid }, Modifier.size(32.dp)) {
+                                    Icon(Icons.Default.Delete, "删除全部对话", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            if (isExpanded) {
+                                tabInfo.forEach { (tabId, tabName, count) ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 0.dp, top = 2.dp, bottom = 2.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("$tabName（$count 条）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                                        IconButton(onClick = { confirmTab = pid to tabId }, Modifier.size(28.dp)) {
+                                            Icon(Icons.Default.Close, "删除此对话", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                                HorizontalDivider()
+                            }
                         }
                     }
                 }
@@ -287,14 +334,27 @@ private fun ChatHistoryDialog(onDismiss: () -> Unit) {
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
     )
-    confirm?.let { pid ->
+
+    // 删除整个项目（全部对话）
+    confirmProject?.let { pid ->
         val projectName = nameMap[pid] ?: pid
         AlertDialog(
-            onDismissRequest = { confirm = null },
+            onDismissRequest = { confirmProject = null },
             title = { Text("确认删除") },
-            text = { Text("确定要删除「$projectName」的对话记录吗？") },
-            confirmButton = { TextButton(onClick = { manager.deleteChatHistory(pid); confirm = null; onDismiss() }) { Text("删除", color = MaterialTheme.colorScheme.error) } },
-            dismissButton = { TextButton(onClick = { confirm = null }) { Text("取消") } }
+            text = { Text("确定要删除「$projectName」的全部对话记录吗？\n将删除该项目所有标签页的对话，此操作不可恢复。") },
+            confirmButton = { TextButton(onClick = { manager.deleteChatHistory(pid); confirmProject = null; onDismiss() }) { Text("删除", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { confirmProject = null }) { Text("取消") } }
+        )
+    }
+    // 删除单个对话
+    confirmTab?.let { (pid, tabId) ->
+        val projectName = nameMap[pid] ?: pid
+        AlertDialog(
+            onDismissRequest = { confirmTab = null },
+            title = { Text("确认删除") },
+            text = { Text("确定要删除「$projectName」的「对话$tabId」吗？此操作不可恢复。") },
+            confirmButton = { TextButton(onClick = { manager.deleteChatHistory(pid, tabId); confirmTab = null; onDismiss() }) { Text("删除", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { confirmTab = null }) { Text("取消") } }
         )
     }
 }

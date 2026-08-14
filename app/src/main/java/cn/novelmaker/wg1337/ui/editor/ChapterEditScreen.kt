@@ -76,6 +76,7 @@ fun ChapterEditScreen(
     val lineSpacing by viewModel.lineSpacing.collectAsState()
     val showFileTree by viewModel.showFileTree.collectAsState()
     val fileTreeItems by viewModel.fileTreeItems.collectAsState()
+    val fileChangeVersion by aiViewModel.fileChangeVersion.collectAsState()
 
     var textFieldValue by remember { mutableStateOf(TextFieldValue(content)) }
     var showAiPanel by remember { mutableStateOf(false) }
@@ -101,6 +102,14 @@ fun ChapterEditScreen(
     // AI 定稿后（面板关闭时）刷新定稿状态
     LaunchedEffect(showAiPanel) {
         if (!showAiPanel) finalizedFiles = finalizedManager.getFinalizedFiles(projectId)
+    }
+
+    // AI 每次成功写/删/标记文件后刷新文件树与定稿列表
+    LaunchedEffect(fileChangeVersion) {
+        if (fileChangeVersion > 0) {
+            viewModel.refreshFileTree()
+            finalizedFiles = finalizedManager.getFinalizedFiles(projectId)
+        }
     }
 
     // 编辑器教程步骤定义

@@ -88,21 +88,24 @@ object BackupManager {
 
     /** 备份单个项目 */
     fun backup(context: Context, project: Project, password: String, signature: String, outputFile: File): Boolean {
+        val tmpDir = File(context.cacheDir, "backup_${System.currentTimeMillis()}")
+        tmpDir.mkdirs()
+        val zipFile = File(tmpDir.parentFile, "${tmpDir.name}.zip")
         return try {
-            val tmpDir = File(context.cacheDir, "backup_${System.currentTimeMillis()}")
-            tmpDir.mkdirs()
             val subDir = File(tmpDir, project.name.replace(Regex("[\\\\/:*?\"<>|]"), "_"))
             subDir.mkdirs()
             writeProjectMeta(subDir, project)
             copyProjectFiles(subDir, project.name)
             copyAiData(context, subDir, project.id)
-            val zipFile = File(tmpDir.parentFile, "${tmpDir.name}.zip")
             zipDir(tmpDir, zipFile)
             writeEncrypted(zipFile, outputFile, password, signature, listOf(project.name))
-            tmpDir.deleteRecursively(); zipFile.delete()
             true
         } catch (e: Exception) {
             e.printStackTrace(); false
+        } finally {
+            // 无论成功失败都清理临时文件
+            zipFile.delete()
+            tmpDir.deleteRecursively()
         }
     }
 
@@ -216,7 +219,8 @@ object BackupManager {
             val magic = ByteArray(4); dis.readFully(magic)
             if (String(magic, Charsets.UTF_8) != "NMBK") throw Exception("无法识别备份文件格式")
             val metaLen = dis.readInt()
-            dis.skipBytes(metaLen)
+            // 完整读取并丢弃元数据（skipBytes 不保证跳过全部字节）
+            dis.readFully(ByteArray(metaLen))
             val salt = ByteArray(SALT_SIZE); dis.readFully(salt)
             val iv = ByteArray(IV_SIZE); dis.readFully(iv)
             val key = deriveKey(password, salt)
@@ -261,7 +265,8 @@ object BackupManager {
         val dstDir = File(tmpDir, "ai_data")
         dstDir.mkdirs()
         aiDir.listFiles()?.forEach { f ->
-            if (f.name.contains(projectId)) {
+            // 仅备份本项目的正式数据文件（过滤 .tmp/.bak 残留）
+            if (f.name.contains(projectId) && !f.name.endsWith(".tmp") && !f.name.endsWith(".bak")) {
                 f.copyTo(File(dstDir, f.name), overwrite = true)
             }
         }
@@ -297,10 +302,17 @@ object BackupManager {
     }
 
     private fun unzipDir(zipFile: File, destDir: File) {
+        val destRoot = destDir.canonicalPath
         ZipInputStream(BufferedInputStream(FileInputStream(zipFile))).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
                 val destFile = File(destDir, entry.name)
+                // Zip Slip 防护：拒绝解压到目标目录之外（防路径穿越）
+                if (!destFile.canonicalPath.startsWith(destRoot)) {
+                    zis.closeEntry()
+                    entry = zis.nextEntry
+                    continue
+                }
                 if (entry.isDirectory) {
                     destFile.mkdirs()
                 } else {

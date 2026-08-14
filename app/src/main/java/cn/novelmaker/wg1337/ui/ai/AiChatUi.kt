@@ -5,8 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -19,9 +20,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cn.novelmaker.wg1337.ui.common.MarkdownContent
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -35,24 +39,27 @@ fun AiChatUi(
     val showResume by viewModel.showResume.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
     val currentMode by viewModel.currentMode.collectAsState()
+    val tabState by viewModel.tabState.collectAsState()
     val listState = rememberLazyListState()
 
     var inputText by remember { mutableStateOf("") }
     var editingIndex by remember { mutableIntStateOf(-1) }
     var editText by remember { mutableStateOf("") }
     var isInitScroll by remember { mutableStateOf(true) }
+    var currentTabId by remember { mutableIntStateOf(tabState.activeTabId) }
 
-    LaunchedEffect(messages.size) {
+    // 滚动定位：切换对话/首次加载 → 直接定位到底（无动画，长对话不卡顿）；
+    // 同一对话内新消息 → 平滑滚动到底
+    LaunchedEffect(messages.size, tabState.activeTabId) {
         if (messages.isNotEmpty()) {
-            if (isInitScroll && messages.size > 1) {
-                // 首次加载：直接定位到底部，不播放动画
+            if (isInitScroll || currentTabId != tabState.activeTabId) {
                 listState.scrollToItem(messages.size - 1)
                 isInitScroll = false
-            } else if (!isInitScroll) {
-                // 新消息到达：平滑滚动
+            } else {
                 listState.animateScrollToItem(messages.size - 1)
             }
         }
+        currentTabId = tabState.activeTabId
     }
 
     Column(modifier = modifier) {
@@ -63,16 +70,19 @@ fun AiChatUi(
         ) {
             title()
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // 模式切换按钮
-                TextButton(onClick = {
-                    if (currentMode == AiChatViewModel.AiMode.PLAN) {
-                        viewModel.switchToAgentMode()
-                        viewModel.onUserChoice("切换到 Agent 写作模式")
-                    } else {
-                        viewModel.switchToPlanMode()
-                        viewModel.onUserChoice("切换回 Plan 计划模式，继续完善大纲")
+                // 模式切换按钮（AI 处理中禁用，防止并发请求）
+                TextButton(
+                    enabled = !isProcessing,
+                    onClick = {
+                        if (currentMode == AiChatViewModel.AiMode.PLAN) {
+                            viewModel.switchToAgentMode()
+                            viewModel.onUserChoice("切换到 Agent 写作模式")
+                        } else {
+                            viewModel.switchToPlanMode()
+                            viewModel.onUserChoice("切换回 Plan 计划模式，继续完善大纲")
+                        }
                     }
-                }) {
+                ) {
                     val (icon, label) = if (currentMode == AiChatViewModel.AiMode.PLAN) "🗺️" to "Plan" else "✍️" to "Agent"
                     Text("$icon $label", fontSize = 12.sp)
                 }
@@ -86,10 +96,43 @@ fun AiChatUi(
                         Icon(Icons.Default.Refresh, "续传", tint = MaterialTheme.colorScheme.primary)
                     }
                 }
-                TextButton(onClick = { viewModel.clearChat() }) {
-                    Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
-                    Text("清空", fontSize = 12.sp)
+            }
+        }
+        HorizontalDivider()
+
+        // 标签页栏：切换/新建会话（AI 处理中禁用），最多 5 个。
+        // 自定义实现（不用 ScrollableTabRow），避免 tab 数量动态变化时的内部越界崩溃
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            tabState.tabs.forEach { tab ->
+                val selected = tab.id == tabState.activeTabId
+                Surface(
+                    onClick = { viewModel.switchTab(tab.id) },
+                    enabled = !isProcessing,
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                    modifier = Modifier.padding(end = 6.dp, top = 6.dp, bottom = 6.dp)
+                ) {
+                    Text(
+                        tab.name,
+                        fontSize = 12.sp,
+                        fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
                 }
+            }
+            if (tabState.tabs.size < AiChatViewModel.MAX_TABS) {
+                IconButton(
+                    onClick = { viewModel.addTab() },
+                    enabled = !isProcessing,
+                    modifier = Modifier.size(32.dp)
+                ) { Icon(Icons.Default.Add, "新建对话", Modifier.size(16.dp)) }
             }
         }
         HorizontalDivider()
@@ -106,7 +149,8 @@ fun AiChatUi(
                     msg.isAssistant() -> AiBubble(
                         msg,
                         onChoice = { viewModel.onUserChoice(it) },
-                        onSwitchToAgent = { viewModel.switchToAgentMode(); viewModel.onUserChoice("已确认计划，开始 Agent 模式写作") }
+                        onSwitchToAgent = { viewModel.switchToAgentMode(); viewModel.onUserChoice("已确认计划，开始 Agent 模式写作") },
+                        onEdit = { editingIndex = index; editText = msg.content }
                     )
                     msg.role == "tool" -> ToolBubble(msg)
                     msg.isSystem() -> SystemBubble(msg, onDelete = if (msg.content.contains("已达到最大")) ({ viewModel.deleteMessage(index) }) else null)
@@ -146,33 +190,51 @@ fun AiChatUi(
         }
     }
 
-    // 编辑/重发对话框
+    // 编辑/重发对话框（用户消息：重发/仅保存；AI 回复：保存修改/删除此条）
     if (editingIndex >= 0) {
-        val isLastUserMsg = editingIndex == messages.size - 1 || (editingIndex < messages.size - 1 && messages.getOrNull(editingIndex + 1)?.isAssistant() == true)
+        val editingMsg = messages.getOrNull(editingIndex)
+        val isEditingAssistant = editingMsg?.isAssistant() == true
         AlertDialog(
             onDismissRequest = { editingIndex = -1 },
-            title = { Text("编辑消息") },
+            title = { Text(if (isEditingAssistant) "编辑 AI 回复" else "编辑消息") },
             text = {
                 Column {
                     OutlinedTextField(
                         value = editText, onValueChange = { editText = it },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp), maxLines = 10
                     )
-                    if (editingIndex < messages.size - 1) {
+                    if (isEditingAssistant) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("仅修改本条内容，不影响后续对话。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    } else if (editingIndex < messages.size - 1) {
                         Spacer(Modifier.height(8.dp))
                         Text("⚠️ 重发将删除此消息之后的所有对话", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                     }
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    viewModel.resendFrom(editingIndex, editText)
-                    editingIndex = -1
-                }) { Text("重发") }
+                if (isEditingAssistant) {
+                    Button(onClick = {
+                        viewModel.editMessage(editingIndex, editText)
+                        editingIndex = -1
+                    }) { Text("保存修改") }
+                } else {
+                    Button(onClick = {
+                        viewModel.resendFrom(editingIndex, editText)
+                        editingIndex = -1
+                    }) { Text("重发") }
+                }
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = { viewModel.editMessage(editingIndex, editText); editingIndex = -1 }) { Text("仅保存") }
+                    if (isEditingAssistant) {
+                        TextButton(onClick = {
+                            viewModel.deleteMessage(editingIndex)
+                            editingIndex = -1
+                        }) { Text("删除此条", color = MaterialTheme.colorScheme.error) }
+                    } else {
+                        TextButton(onClick = { viewModel.editMessage(editingIndex, editText); editingIndex = -1 }) { Text("仅保存") }
+                    }
                     TextButton(onClick = { editingIndex = -1 }) { Text("取消") }
                 }
             }
@@ -192,16 +254,24 @@ private fun UserBubble(msg: AiChatMessage, onLongClick: (() -> Unit)? = null) {
             )
         ) {
             Column(Modifier.padding(12.dp)) {
-                SelectionContainer { Text(msg.content, style = MaterialTheme.typography.bodyMedium) }
+                // 气泡内容不可复制（长按编辑功能不受影响）
+                Text(msg.content, style = MaterialTheme.typography.bodyMedium)
                 Text(fmt(msg.timestamp), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun AiBubble(msg: AiChatMessage, onChoice: (String) -> Unit = {}, onSwitchToAgent: () -> Unit = {}) {
+private fun AiBubble(
+    msg: AiChatMessage,
+    onChoice: (String) -> Unit = {},
+    onSwitchToAgent: () -> Unit = {},
+    onEdit: (() -> Unit)? = null
+) {
     var showReasoning by remember { mutableStateOf(false) }
+    var showToolCalls by remember { mutableStateOf(false) } // 工具调用默认折叠
     // 解析内容中的特殊标记
     val cleanContent = remember(msg.content) {
         msg.content
@@ -219,7 +289,9 @@ private fun AiBubble(msg: AiChatMessage, onChoice: (String) -> Unit = {}, onSwit
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant,
             shape = bubbleShape,
-            modifier = Modifier.widthIn(max = 300.dp)
+            modifier = Modifier.widthIn(max = 300.dp).then(
+                if (onEdit != null) Modifier.combinedClickable(onClick = {}, onLongClick = onEdit) else Modifier
+            )
         ) {
             Column(Modifier.padding(12.dp)) {
                 if (msg.hasReasoning()) {
@@ -238,10 +310,28 @@ private fun AiBubble(msg: AiChatMessage, onChoice: (String) -> Unit = {}, onSwit
                     }
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 }
-                if (cleanContent.isNotEmpty()) SelectionContainer { Text(cleanContent, style = MaterialTheme.typography.bodyMedium) }
+                // AI 输出支持 Markdown 渲染（仅展示有效，编辑时仍为纯文本）；内容不可复制，长按可编辑
+                if (cleanContent.isNotEmpty()) {
+                    MarkdownContent(cleanContent, textStyle = MaterialTheme.typography.bodyMedium)
+                }
+
+                // 工具调用列表：默认折叠，点击展开（读取/写入/搜索等一律折叠）
                 if (msg.hasToolCalls()) {
-                    msg.toolCalls?.forEach { tc ->
-                        Text("🔧 ${tc.function.name}", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.clickable { showToolCalls = !showToolCalls }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(if (showToolCalls) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(4.dp))
+                        Text("🔧 工具调用（${msg.toolCalls?.size ?: 0} 次）", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                    AnimatedVisibility(showToolCalls) {
+                        Column {
+                            msg.toolCalls?.forEach { tc ->
+                                Text("• ${tc.function.name}", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(vertical = 1.dp))
+                            }
+                        }
                     }
                 }
 
@@ -314,9 +404,32 @@ private fun AiBubble(msg: AiChatMessage, onChoice: (String) -> Unit = {}, onSwit
 
 @Composable
 private fun ToolBubble(msg: AiChatMessage) {
+    var expanded by remember { mutableStateOf(false) } // 工具结果默认折叠
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-        Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth(0.9f), tonalElevation = 1.dp) {
-            Text(msg.content, modifier = Modifier.padding(10.dp), fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .clickable { expanded = !expanded },
+            tonalElevation = 1.dp
+        ) {
+            Column(Modifier.padding(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(4.dp))
+                    Text("🔧 工具结果", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                }
+                AnimatedVisibility(expanded) {
+                    Text(
+                        msg.content,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
         }
     }
 }
