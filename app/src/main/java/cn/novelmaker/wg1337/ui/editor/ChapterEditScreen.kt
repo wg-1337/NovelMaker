@@ -131,8 +131,11 @@ fun ChapterEditScreen(
             TutorialStep(
                 title = "🤖 AI 写作助手",
                 description = "点击 ✨ 按钮打开 AI 助手面板。" +
-                        "\n\n• Plan 模式：让 AI 帮你规划大纲和情节\n" +
+                        "\n\n• Plan 模式：AI 帮你规划大纲和情节\n" +
                         "• Agent 模式：AI 直接撰写章节正文\n" +
+                        "• 多对话标签页：最多 5 个独立对话，互不干扰\n" +
+                        "• 联网搜索：AI 可搜索网络资料、查阅范文，还能打开网页\n" +
+                        "• 长按 AI 回复可修改或删除，工具调用默认折叠\n" +
                         "• AI 还能读取和修改你的项目文件"
             ),
             TutorialStep(
@@ -406,6 +409,23 @@ fun ChapterEditScreen(
                     onValueChange = { viewModel.setLineSpacing(it) },
                     valueRange = 1f..5f
                 )
+
+                Spacer(Modifier.height(16.dp))
+
+                // 思考强度（全局设置，与软件设置同步）
+                var reasoningEffort by remember { mutableStateOf(editorPrefsManager.aiReasoningEffort ?: "high") }
+                Text("思考强度", style = MaterialTheme.typography.bodyLarge)
+                Text("AI 回复前的深度思考级别，全局生效", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("off" to "不思考", "high" to "高", "max" to "最大").forEach { (value, label) ->
+                        FilterChip(
+                            selected = reasoningEffort == value,
+                            onClick = { reasoningEffort = value; editorPrefsManager.aiReasoningEffort = value },
+                            label = { Text(label) }
+                        )
+                    }
+                }
             }
         }
     }

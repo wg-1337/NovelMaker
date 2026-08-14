@@ -18,7 +18,8 @@ class AiFileTools(
     private val projectName: String,
     private val projectId: String,
     private val mode: AiChatViewModel.AiMode = AiChatViewModel.AiMode.AGENT,
-    private val onFileChanged: (() -> Unit)? = null
+    private val onFileChanged: (() -> Unit)? = null,
+    private val fetchPlainText: Boolean = true
 ) {
 
     private val projectDir = ProjectStorageManager.getProjectDir(projectName)
@@ -220,6 +221,26 @@ class AiFileTools(
             })
         })
 
+        // 9. fetchUrl - 打开网页获取 HTML
+        toolsArray.put(JSONObject().apply {
+            put("type", "function")
+            put("function", JSONObject().apply {
+                put("name", "fetchUrl")
+                put("description", "打开指定网址，获取网页 HTML 原文。当需要查看搜索结果中某个链接的具体内容、获取参考资料或文章原文时使用。仅支持 http/https 网址，页面过大时会截断。")
+                put("parameters", JSONObject().apply {
+                    put("type", "object")
+                    put("properties", JSONObject().apply {
+                        put("url", JSONObject().apply {
+                            put("type", "string")
+                            put("description", "完整的网页地址，必须以 http:// 或 https:// 开头，例如 https://example.com/article/1")
+                        })
+                    })
+                    put("required", JSONArray().put("url"))
+                    put("additionalProperties", false)
+                })
+            })
+        })
+
         return toolsArray
     }
 
@@ -277,6 +298,11 @@ class AiFileTools(
                     val engine = args?.optString("engine", "bing") ?: "bing"
                     if (query.isBlank()) "请提供搜索关键词"
                     else searchWeb(query, engine)
+                }
+                "fetchUrl" -> {
+                    val url = args?.optString("url", "") ?: ""
+                    if (url.isBlank()) "请提供要打开的网址"
+                    else fetchUrl(url)
                 }
                 else -> "未知工具: $toolName"
             }
@@ -422,27 +448,94 @@ class AiFileTools(
             "https://www.bing.com/search?q=${URLEncoder.encode(query, "UTF-8")}&count=8&setlang=zh-hans"
         }
         return try {
-            val conn = URL(urlStr).openConnection() as HttpURLConnection
-            conn.apply {
-                requestMethod = "GET"
-                connectTimeout = SEARCH_TIMEOUT_MS
-                readTimeout = SEARCH_TIMEOUT_MS
-                setRequestProperty(
-                    "User-Agent",
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                )
-                setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-            }
-            val code = conn.responseCode
-            if (code != HttpURLConnection.HTTP_OK) {
-                "❌ 搜索失败：HTTP $code"
-            } else {
-                val html = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.take(MAX_SEARCH_HTML)
-                conn.disconnect()
-                parseSearchResults(html, useGoogle, query)
-            }
+            val html = httpGet(urlStr, SEARCH_TIMEOUT_MS, MAX_SEARCH_HTML)
+            parseSearchResults(html, useGoogle, query)
         } catch (e: Exception) {
             "❌ 搜索失败：${e.message}"
+        }
+    }
+
+    /**
+     * 打开指定网址获取页面内容（供 AI 查看页面原文/参考资料）。
+     * 仅支持 http/https；页面超过上限时截断并提示。
+     * fetchPlainText=true 时提取正文纯文本（省 Token），否则返回原始 HTML。
+     */
+    fun fetchUrl(url: String): String {
+        val trimmed = url.trim()
+        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+            return "❌ 仅支持 http/https 网址：$trimmed"
+        }
+        return try {
+            val raw = httpGet(trimmed, FETCH_TIMEOUT_MS, MAX_FETCH_HTML + 1)
+            val text = if (fetchPlainText) htmlToText(raw) else raw
+            if (text.length > MAX_FETCH_HTML) {
+                "⚠️ 内容较大，已截断到前 ${MAX_FETCH_HTML / 1024 / 1024}MB：\n" + text.take(MAX_FETCH_HTML)
+            } else {
+                text
+            }
+        } catch (e: Exception) {
+            "❌ 打开页面失败：${e.message}"
+        }
+    }
+
+    /** 从 HTML 提取正文纯文本：去掉 script/style、块级标签转换行、解码实体、压缩空白 */
+    private fun htmlToText(html: String): String {
+        return html
+            .replace(Regex("<script[\\s\\S]*?</script>", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("<style[\\s\\S]*?</style>", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("<!--[\\s\\S]*?-->"), "")
+            .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("</(p|div|li|h[1-6]|tr|blockquote|section|article|pre|ul|ol)>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("<li[^>]*>", RegexOption.IGNORE_CASE), "\n• ")
+            .replace(Regex("</(td|th)>", RegexOption.IGNORE_CASE), "\t")
+            .replace(Regex("<[^>]+>"), "")
+            .replace("&nbsp;", " ")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace(Regex("[ \\t]+"), " ")
+            .replace(Regex("\\n{3,}"), "\n\n")
+            .trim()
+    }
+
+    /**
+     * GET 请求指定网址，返回响应文本。
+     * 最多读取 maxChars 个字符，避免超大页面占满内存。
+     */
+    private fun httpGet(urlStr: String, timeoutMs: Int, maxChars: Int): String {
+        val conn = URL(urlStr).openConnection() as HttpURLConnection
+        conn.apply {
+            requestMethod = "GET"
+            connectTimeout = timeoutMs
+            readTimeout = timeoutMs
+            setRequestProperty(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+        }
+        try {
+            val code = conn.responseCode
+            if (code != HttpURLConnection.HTTP_OK) throw Exception("HTTP $code")
+            val reader = conn.inputStream.bufferedReader(Charsets.UTF_8)
+            try {
+                val sb = StringBuilder()
+                val buf = CharArray(8192)
+                var total = 0
+                while (total < maxChars) {
+                    val n = reader.read(buf, 0, minOf(buf.size, maxChars - total))
+                    if (n < 0) break
+                    sb.append(buf, 0, n)
+                    total += n
+                }
+                return sb.toString()
+            } finally {
+                reader.close()
+            }
+        } finally {
+            conn.disconnect()
         }
     }
 
@@ -498,8 +591,10 @@ class AiFileTools(
     companion object {
         private const val MAX_READ_SIZE = 1024 * 1024L
         private const val MAX_WRITE_SIZE = 5 * 1024 * 1024L
-        private const val MAX_SEARCH_HTML = 512 * 1024      // 搜索结果页最多读取 512KB
-        private const val MAX_SEARCH_RESULTS = 6            // 最多返回 6 条结果
-        private const val SEARCH_TIMEOUT_MS = 8000          // 搜索超时 8 秒
+        private const val MAX_SEARCH_HTML = 5 * 1024 * 1024  // 搜索结果页最多读取 5MB
+        private const val MAX_FETCH_HTML = 5 * 1024 * 1024   // 打开页面最多读取 5MB
+        private const val MAX_SEARCH_RESULTS = 6             // 最多返回 6 条结果
+        private const val SEARCH_TIMEOUT_MS = 8000           // 搜索超时 8 秒
+        private const val FETCH_TIMEOUT_MS = 10000           // 打开页面超时 10 秒
     }
 }

@@ -38,6 +38,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     var aiModel by remember { mutableStateOf(prefsManager.aiModel ?: "deepseek-chat") }
     var aiApiKey by remember { mutableStateOf(prefsManager.aiApiKey ?: "") }
     var aiStream by remember { mutableStateOf(prefsManager.aiStreamEnabled) }
+    var aiReasoningEffort by remember { mutableStateOf(prefsManager.aiReasoningEffort ?: "high") }
+    var aiFetchPlainText by remember { mutableStateOf(prefsManager.aiFetchPlainText) }
     var showChatHistoryDialog by remember { mutableStateOf(false) }
     var showTokenStatsDialog by remember { mutableStateOf(false) }
     var showPromptViewerDialog by remember { mutableStateOf(false) }
@@ -94,7 +96,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             ) {
                 Column(Modifier.padding(16.dp)) {
                     Text("NovelMaker", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("版本 1.5.0", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("版本 1.5.1", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("点击访问项目仓库 →", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
             }
@@ -178,6 +180,29 @@ fun SettingsScreen(onBack: () -> Unit) {
                             Text("逐字显示AI回复内容", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = aiStream, onCheckedChange = { aiStream = it; prefsManager.aiStreamEnabled = it })
+                    }
+                    // 思考强度（全局设置，编辑器快捷设置中同步调整）
+                    Column {
+                        Text("思考强度", style = MaterialTheme.typography.bodyLarge)
+                        Text("AI 回复前的深度思考级别，不思考响应更快", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("off" to "不思考", "high" to "高", "max" to "最大").forEach { (value, label) ->
+                                FilterChip(
+                                    selected = aiReasoningEffort == value,
+                                    onClick = { aiReasoningEffort = value; prefsManager.aiReasoningEffort = value },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+                    }
+                    // 页面纯文本模式
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column {
+                            Text("页面纯文本模式", style = MaterialTheme.typography.bodyLarge)
+                            Text("AI 打开网页时提取正文纯文本，关闭则返回原始 HTML", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = aiFetchPlainText, onCheckedChange = { aiFetchPlainText = it; prefsManager.aiFetchPlainText = it })
                     }
                     Spacer(Modifier.height(4.dp))
                     // 聊天记录管理

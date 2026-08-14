@@ -70,6 +70,7 @@ class AiApiClient(
                         put("stream", true)
                         put("max_tokens", maxTokens)
                         put("temperature", 0.7)
+                        putThinkingParams(this)
                     }
                 } else {
                     buildRequestBody(messages, systemPrompt, tools, stream = true)
@@ -316,7 +317,7 @@ class AiApiClient(
         }
 
         if (thinkingEnabled) {
-            body.put("reasoning_effort", reasoningEffort)
+            putThinkingParams(body)
         }
 
         if (jsonModeEnabled) {
@@ -329,5 +330,18 @@ class AiApiClient(
         body.put("temperature", 0.7)
 
         return body
+    }
+
+    /**
+     * 写入思考模式参数（DeepSeek 思考模式文档：https://api-docs.deepseek.com/zh-cn/guides/thinking_mode/）
+     * - "off"：关闭思考，发送 thinking.type=disabled
+     * - 其他（high/max 等）：发送 reasoning_effort 控制思考强度
+     */
+    private fun putThinkingParams(body: JSONObject) {
+        if (reasoningEffort == "off") {
+            body.put("thinking", JSONObject().apply { put("type", "disabled") })
+        } else {
+            body.put("reasoning_effort", reasoningEffort)
+        }
     }
 }

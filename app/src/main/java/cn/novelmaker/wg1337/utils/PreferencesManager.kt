@@ -63,10 +63,15 @@ class PreferencesManager(context: Context) {
         get() = prefs.getBoolean("ai_stream_enabled", true)
         set(value) = prefs.edit().putBoolean("ai_stream_enabled", value).apply()
 
-    // 思考强度: "high" 或 "max"
+    // 思考强度: "off"(不思考) / "high" / "max"
     var aiReasoningEffort: String?
         get() = prefs.getString("ai_reasoning_effort", "high")
         set(value) = prefs.edit().putString("ai_reasoning_effort", value).apply()
+
+    // AI 打开网页：true=提取正文纯文本（默认，省 Token）；false=返回原始 HTML
+    var aiFetchPlainText: Boolean
+        get() = prefs.getBoolean("ai_fetch_plain_text", true)
+        set(value) = prefs.edit().putBoolean("ai_fetch_plain_text", value).apply()
 
     // AI面板模式: 0=底部上拉栏(默认), 1=右侧侧拉栏
     var aiPanelMode: Int

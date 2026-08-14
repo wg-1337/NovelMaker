@@ -177,9 +177,17 @@ class AiChatViewModel : ViewModel() {
         val model = prefsManager.aiModel ?: "deepseek-chat"
         val useStream = prefsManager.aiStreamEnabled
         val maxRounds = prefsManager.aiMaxToolRounds
-        val fTools = AiFileTools(projectName, projectId, _currentMode.value) { _fileChangeVersion.update { it + 1 } }
+        val fTools = AiFileTools(
+            projectName, projectId, _currentMode.value,
+            onFileChanged = { _fileChangeVersion.update { it + 1 } },
+            fetchPlainText = prefsManager.aiFetchPlainText
+        )
         val tools = fTools.getToolDefinitions()
-        val apiClient = AiApiClient(apiKey = apiKey, baseUrl = baseUrl, model = model, thinkingEnabled = true)
+        val apiClient = AiApiClient(
+            apiKey = apiKey, baseUrl = baseUrl, model = model,
+            reasoningEffort = prefsManager.aiReasoningEffort ?: "high",
+            thinkingEnabled = true
+        )
         lastApiClient = apiClient; lastFTools = fTools; lastTools = tools; lastMaxToolRounds = maxRounds
         if (!retry) lastCurrentRound = 0
         sendWithToolLoop(apiClient, fTools, tools, useStream, maxRounds, if (retry) lastCurrentRound else 0)
@@ -259,7 +267,7 @@ class AiChatViewModel : ViewModel() {
         // 基础提示词 + Plan 阶段追加
         sb.append(systemPromptManager.getFullPrompt(projectId))
         // 联网搜索说明（两种模式通用）
-        sb.append("\n\n【联网搜索】当你遇到不了解的信息、不确定的事实、没见过的文体/写作风格或概念，或用户需要最新资料、范文示例时，使用 webSearch 工具联网搜索。优先使用 bing 搜索引擎（默认），google 作为备选。搜索关键词由你根据用户需求自行拟定，可以一次搜索多个关键词，然后综合搜索结果回答用户。")
+        sb.append("\n\n【联网搜索】当你遇到不了解的信息、不确定的事实、没见过的文体/写作风格或概念，或用户需要最新资料、范文示例时，使用 webSearch 工具联网搜索。优先使用 bing 搜索引擎（默认），google 作为备选。搜索关键词由你根据用户需求自行拟定，可以一次搜索多个关键词。需要查看搜索结果中某个链接的具体内容或获取参考资料原文时，使用 fetchUrl 工具打开该网址获取页面 HTML，然后综合内容回答用户。")
         // Plan 模式指示
         if (_currentMode.value == AiMode.PLAN) {
             sb.append("\n\n【当前模式：Plan 计划模式】\n")
