@@ -203,6 +203,18 @@ novelmaker/
 
 ---
 
+## ☕ 赞助支持
+
+如果 NovelMaker 帮助到了你，欢迎请作者喝杯咖啡，支持项目持续维护与开发。
+
+<div align="center">
+  <img src="docs/images/sponsor-wechat.png" alt="微信赞赏" width="260">
+  <br>
+  <sub>微信扫一扫 · 感谢支持</sub>
+</div>
+
+---
+
 ## 📄 许可证
 
 本项目基于 GNU General Public License v3.0 (GPLv3) 授权开源。
