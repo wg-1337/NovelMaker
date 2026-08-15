@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NovelMaker — AI 加持的轻量小说创作工具</title>
+<meta name="description" content="NovelMaker 是一款运行于 Android 的轻量小说创作工具：本地存储、DeepSeek AI 辅助写作、开源免费。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 108 108'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='108' y1='0' x2='0' y2='108' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23FF7AD1'/%3E%3Cstop offset='1' stop-color='%23D777F5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='108' height='108' rx='24' fill='url(%23g)'/%3E%3Cpath d='M43.6 35h7.2v38h-7.2z' fill='%23fff'/%3E%3Cpath d='M57.2 35h7.2v38h-7.2z' fill='%23fff'/%3E%3Cpath d='M43.6 73h7.2l6.4-38h7.2z' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+  /* Material 3 Light · 蓝紫系（与产品一致） */
+  :root {
+    --primary: #515B92;
+    --on-primary: #FFFFFF;
+    --primary-container: #DEE0FF;
+    --on-primary-container: #0A1545;
+    --surface: #FDFBFF;
+    --surface-2: #F3F1F7;
+    --on-surface: #1A1B21;
+    --on-surface-variant: #5F6368;
+    --outline: #C4C5E0;
+    --card: #FFFFFF;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: "Roboto", "Google Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--surface);
+    color: var(--on-surface);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.6;
+  }
+  a { color: var(--primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── 顶栏 ── */
+  header {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(253, 251, 255, .88);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--outline);
+  }
+  .nav {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 64px;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 500; color: var(--on-surface); }
+  .logo svg { display: block; }
+  .logo:hover { text-decoration: none; }
+  .nav-links { display: flex; align-items: center; gap: 28px; font-size: 14px; }
+  .nav-links a { color: var(--on-surface-variant); }
+  .nav-links a:hover { color: var(--primary); text-decoration: none; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 24px; border-radius: 999px;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    border: 1px solid transparent;
+    transition: box-shadow .2s, background .2s;
+  }
+  .btn:hover { text-decoration: none; }
+  .btn.primary { background: var(--primary); color: var(--on-primary); box-shadow: 0 1px 3px rgba(81,91,146,.4); }
+  .btn.primary:hover { box-shadow: 0 4px 12px rgba(81,91,146,.35); }
+  .btn.tonal { background: var(--primary-container); color: var(--on-primary-container); }
+  .btn.tonal:hover { box-shadow: 0 3px 10px rgba(81,91,146,.2); }
+  .btn.outline { border-color: var(--outline); color: var(--primary); background: transparent; }
+  .btn.outline:hover { background: var(--surface-2); }
+  .btn.large { padding: 14px 32px; font-size: 16px; }
+  .btn svg { display: block; }
+
+  /* ── Hero ── */
+  .hero { text-align: center; padding: 110px 24px 90px; }
+  .hero h1 {
+    font-size: 56px; font-weight: 500; letter-spacing: -0.5px;
+    color: var(--on-surface); line-height: 1.2; margin-bottom: 22px;
+  }
+  .hero .sub { font-size: 20px; color: var(--on-surface-variant); max-width: 640px; margin: 0 auto 40px; }
+  .hero .cta { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+  .hero .meta { margin-top: 28px; font-size: 13px; color: var(--on-surface-variant); }
+
+  /* ── 特色条 ── */
+  .strip { background: var(--surface-2); border-top: 1px solid var(--outline); border-bottom: 1px solid var(--outline); }
+  .strip .wrap { display: flex; justify-content: center; gap: 56px; flex-wrap: wrap; padding: 26px 24px; }
+  .strip span { font-size: 14px; color: var(--on-surface-variant); }
+  .strip b { color: var(--on-surface); font-weight: 500; }
+
+  /* ── 功能网格 ── */
+  section.features { padding: 96px 0; }
+  .sec-title { text-align: center; font-size: 38px; font-weight: 500; margin-bottom: 14px; }
+  .sec-sub { text-align: center; font-size: 16px; color: var(--on-surface-variant); margin-bottom: 56px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .card {
+    background: var(--card); border: 1px solid var(--outline);
+    border-radius: 24px; padding: 32px 28px;
+    transition: box-shadow .25s, transform .25s;
+  }
+  .card:hover { box-shadow: 0 8px 28px rgba(81,91,146,.12); transform: translateY(-3px); }
+  .card .icon {
+    width: 48px; height: 48px; border-radius: 14px;
+    background: var(--primary-container); color: var(--on-primary-container);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 20px;
+  }
+  .card h3 { font-size: 19px; font-weight: 500; margin-bottom: 10px; }
+  .card p { font-size: 14.5px; color: var(--on-surface-variant); }
+
+  /* ── 亮点三列 ── */
+  section.highlights { padding: 0 0 96px; }
+  .hlist { display: grid; grid-template-columns: repeat(3, 1fr); gap: 48px; text-align: center; }
+  .hlist h3 { font-size: 20px; font-weight: 500; margin-bottom: 10px; }
+  .hlist p { font-size: 14.5px; color: var(--on-surface-variant); }
+
+  /* ── 底部 CTA ── */
+  section.cta { padding: 0 0 110px; }
+  .cta-card {
+    background: var(--primary-container); border-radius: 32px;
+    text-align: center; padding: 72px 32px;
+    color: var(--on-primary-container);
+  }
+  .cta-card h2 { font-size: 36px; font-weight: 500; margin-bottom: 14px; }
+  .cta-card p { font-size: 16px; opacity: .8; margin-bottom: 36px; }
+  .cta-card .btn { background: var(--on-primary-container); color: var(--primary-container); }
+  .cta-card .btn:hover { box-shadow: 0 6px 16px rgba(10,21,69,.3); }
+
+  /* ── 页脚 ── */
+  footer { border-top: 1px solid var(--outline); background: var(--surface-2); }
+  .foot { display: flex; flex-wrap: wrap; gap: 16px 40px; align-items: center; justify-content: space-between; padding: 32px 24px; font-size: 13px; color: var(--on-surface-variant); }
+  .foot .links { display: flex; gap: 24px; }
+
+  /* ── 动效 ── */
+  .hero-anim { animation: rise .85s cubic-bezier(.2,.7,.3,1) both; }
+  .d1 { animation-delay: .05s; }
+  .d2 { animation-delay: .18s; }
+  .d3 { animation-delay: .32s; }
+  .d4 { animation-delay: .46s; }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(28px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s ease, transform .7s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  header.scrolled { box-shadow: 0 2px 12px rgba(26,27,33,.08); }
+  .btn { transition: box-shadow .2s, background .2s, transform .2s; }
+  .btn:active { transform: scale(.97); }
+  .icon svg { transition: transform .3s ease; }
+  .card:hover .icon svg { transform: scale(1.12) rotate(-3deg); }
+  .strip .wrap > span { transition: color .2s; }
+  .strip .wrap > span:hover { color: var(--primary); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-anim, .reveal { animation: none; transition: none; opacity: 1; transform: none; }
+    html { scroll-behavior: auto; }
+  }
+
+  @media (max-width: 860px) {
+    .hero h1 { font-size: 38px; }
+    .grid, .hlist { grid-template-columns: 1fr; }
+    .nav-links a:not(.btn) { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="logo" href="#">
+      <svg width="28" height="28" viewBox="0 0 108 108" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="logoGrad" x1="108" y1="0" x2="0" y2="108" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#FF7AD1"/>
+            <stop offset="1" stop-color="#D777F5"/>
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="108" height="108" rx="24" fill="url(#logoGrad)"/>
+        <path d="M43.6 35h7.2v38h-7.2z" fill="#FFFFFF"/>
+        <path d="M57.2 35h7.2v38h-7.2z" fill="#FFFFFF"/>
+        <path d="M43.6 73h7.2l6.4-38h7.2z" fill="#FFFFFF"/>
+      </svg>
+      NovelMaker
+    </a>
+    <nav class="nav-links">
+      <a href="#features">功能</a>
+      <a href="#highlights">优势</a>
+      <a class="btn outline" href="https://github.com/wg-1337/NovelMaker" target="_blank">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.56 9.56 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <h1 class="hero-anim d1">写小说的轻量方式<br>AI 帮你规划与成稿</h1>
+    <p class="sub hero-anim d2">NovelMaker 是一款运行于 Android 的小说创作工具。项目与数据全部保存在本地，借助 DeepSeek 大模型完成大纲规划、正文撰写与资料检索，简单、快速、免费开源。</p>
+    <div class="cta hero-anim d3">
+      <a class="btn primary large" href="https://github.com/wg-1337/NovelMaker/releases" target="_blank">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        下载 Android 版
+      </a>
+    </div>
+    <p class="meta hero-anim d4">最新版本 v1.5.1 · 开源 GPLv3 · 免费无广告</p>
+  </div>
+</section>
+
+<div class="strip">
+  <div class="wrap reveal">
+    <span><b>本地优先</b> 所有数据仅存于你的设备</span>
+    <span><b>DeepSeek 驱动</b> 支持思考深度调节与联网搜索</span>
+    <span><b>AES-256</b> 加密备份与恢复</span>
+    <span><b>零依赖</b> 无需注册账号</span>
+  </div>
+</div>
+
+<section class="features" id="features">
+  <div class="wrap">
+    <h2 class="sec-title reveal">为写作者而设计</h2>
+    <p class="sec-sub reveal">从灵感到成稿，每个环节都有趁手的工具</p>
+    <div class="grid">
+
+      <div class="card reveal">
+        <div class="icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M19 15l.9 2.4L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.6L19 15z"/></svg>
+        </div>
+        <h3>AI 写作助手</h3>
+        <p>Plan 与 Agent 双模式：从大纲、角色、章节规划到正文撰写一气呵成。支持联网搜索资料、打开网页、查看思考过程。</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16M6 16l2.5-6.5L12 14l2.5-6.5L18 16"/></svg>
+        </div>
+        <h3>专业编辑器</h3>
+        <p>行号、30 步撤销重做、实时字数统计、双指缩放字号。停止输入自动保存，返回或切换文件不丢内容。</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4V5z"/><path d="M8 9h8M8 12h5"/></svg>
+        </div>
+        <h3>多对话管理</h3>
+        <p>每个项目最多 5 个独立对话标签页，大纲讨论与正文创作互不干扰，记录自动持久化。</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h6l2 2h10v10H3V7z"/></svg>
+        </div>
+        <h3>项目管理</h3>
+        <p>自动生成大纲、提示词、小说主体目录结构；章节数与总字数实时统计，文件树一目了然。</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.4-3.2 8.2-8 9-4.8-.8-8-4.6-8-9V7l8-4z"/><path d="M9 12l2 2 4-4"/></svg>
+        </div>
+        <h3>安全备份</h3>
+        <p>AES-256 加密备份项目文件、对话记录与统计，.nmbak 格式一键恢复，同名项目自动重命名。</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2a10 10 0 0 1 10 10h-4a6 6 0 0 0-12 0H2A10 10 0 0 1 12 2z"/><path d="M12 22a10 10 0 0 1-10-10h4a6 6 0 0 0 12 0h4A10 10 0 0 1 12 22z"/></svg>
+        </div>
+        <h3>个性化</h3>
+        <p>Material 3 主题切换即时生效；思考强度不思考、高、最大三档可调；页面纯文本模式省 Token。</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="highlights" id="highlights">
+  <div class="wrap">
+    <div class="hlist reveal">
+      <div>
+        <h3>简单</h3>
+        <p>打开即写。没有复杂的配置，API Key 一次设置永久生效。</p>
+      </div>
+      <div>
+        <h3>可靠</h3>
+        <p>KV-Cache 命中优化、定稿章节缓存，长对话更省 Token、更稳定。</p>
+      </div>
+      <div>
+        <h3>开放</h3>
+        <p>GPLv3 开源，代码完全公开，欢迎贡献与二次开发。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="wrap">
+    <div class="cta-card reveal">
+      <h2>开始你的下一部小说</h2>
+      <p>免费下载，即刻开写。AI 负责查资料、理大纲，你负责讲故事。</p>
+      <a class="btn large" href="https://github.com/wg-1337/NovelMaker/releases" target="_blank">前往下载</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <span>© 2026 NovelMaker · GPLv3 开源项目</span>
+    <div class="links">
+      <a href="https://github.com/wg-1337/NovelMaker" target="_blank">GitHub</a>
+      <a href="https://github.com/wg-1337/NovelMaker/blob/main/CHANGELOG.md" target="_blank">更新日志</a>
+    </div>
+    <span>本软件仅供个人学习与创作使用。AI 仅支持 OpenAI 格式的 DeepSeek。</span>
+  </div>
+</footer>
+
+<script>
+  // 滚动渐显（卡片 / 区块进入视口时浮现）
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // 吸顶导航滚动阴影
+  const header = document.querySelector('header');
+  const onScroll = () => header.classList.toggle('scrolled', window.scrollY > 8);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+</script>
+
+</body>
+</html>
