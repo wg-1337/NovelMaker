@@ -203,9 +203,10 @@ novelmaker/
 
 ---
 
-## ☕ 赞助支持
+## 🍜 赞助支持
 
-如果 NovelMaker 帮助到了你，欢迎请作者喝杯咖啡，支持项目持续维护与开发。
+如果 NovelMaker 帮助到了你，欢迎请作者嗦碗粉和购买token，支持项目持续维护与开发。
+`以后可能会设立赞助榜`
 
 <div align="center">
   <img src="docs/images/sponsor-wechat.png" alt="微信赞赏" width="260">
