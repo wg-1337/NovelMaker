@@ -15,8 +15,8 @@ android {
         applicationId = "cn.novelmaker.wg1337"
         minSdk = 24
         targetSdk = 36
-        versionCode = 118
-        versionName = "1.5.1"
+        versionCode = 119
+        versionName = "1.5.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

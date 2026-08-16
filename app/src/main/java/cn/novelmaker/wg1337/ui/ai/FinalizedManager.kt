@@ -34,9 +34,9 @@ class FinalizedManager(private val context: Context) {
         val files = getFinalizedFiles(projectId).toMutableSet()
         files.add(relativePath)
         val prefs = context.getSharedPreferences("novelmaker_prefs", android.content.Context.MODE_PRIVATE)
-        val limit = prefs.getInt("max_finalized_chapters", 0)
+        val limit = prefs.getInt("max_finalized_chapters", 50)
         if (limit > 0 && files.size > limit) {
-            val bulk = prefs.getInt("bulk_evict_chapters", 1).coerceAtLeast(1)
+            val bulk = prefs.getInt("bulk_evict_chapters", 20).coerceAtLeast(1)
             val sorted = files.sortedBy { cn.novelmaker.wg1337.utils.ProjectStorageManager.extractChapterNumber(it) }
             sorted.take(bulk.coerceAtMost(files.size - 1)).forEach { files.remove(it) }
         }

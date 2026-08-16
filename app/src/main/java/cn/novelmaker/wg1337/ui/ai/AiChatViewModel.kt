@@ -217,13 +217,15 @@ class AiChatViewModel : ViewModel() {
             apiMessages.add(AiChatMessage(role = "system", content = ctx))
         }
 
-        // 4. 历史对话（user/assistant/tool，排除 choice 角色——那是 UI 专用）
-        apiMessages.addAll(_messages.value.filter { it.role != "system" && it.role != "choice" })
+        // 4. 历史对话（排除 choice 角色——那是 UI 专用；保留 system 状态提示）
+        apiMessages.addAll(_messages.value.filter { it.role != "choice" })
 
-        // 构建 JSON：仅前缀部分加 cache_control
+        // 构建 JSON：仅真正的固定前缀（系统提示词 + 定稿章节）加 cache_control。
+        // 当前编辑内容 ctx 是可变的，绝不能标缓存，否则每次编辑都会打碎缓存。
+        val cacheCount = 1 + (if (finalized.isNotEmpty()) 1 else 0)
         val msgsJson = JSONArray()
         for (i in apiMessages.indices) {
-            val cache = i < 2  // 前 2 条是固定前缀
+            val cache = i < cacheCount
             msgsJson.put(apiMessages[i].toJsonObject(cacheControl = cache))
         }
 
@@ -279,6 +281,8 @@ class AiChatViewModel : ViewModel() {
             sb.append("[DIRECTION_CHOICES:选项1|选项2|选项3]\n")
         } else {
             sb.append("\n\n【当前模式：Agent 写作模式】可以自由读写所有目录，专注创作小说正文。如需调整计划，用户可以手动切换回 Plan 模式。")
+            // 定稿主动引导
+            sb.append("\n\n【主动引导定稿】当小说主体目录已有较多章节（3 章及以上）时，应主动提醒用户将已完成、确定不再修改的章节标记为定稿，并向用户说明定稿的好处：1) 定稿章节会纳入缓存前缀，后续对话命中缓存，更省 Token、回复更快；2) 每次写作前你都会回顾全部定稿章节，保证剧情、人物设定与写作风格前后一致；3) 避免上下文过长导致早期关键设定被挤出。用户同意后，引导用户使用文件树中长按章节的「标记定稿」功能（由用户在编辑器里手动操作，你无法代替用户定稿）。")
         }
         return sb.toString()
     }
@@ -289,7 +293,7 @@ class AiChatViewModel : ViewModel() {
         if (files.isEmpty()) return ""
         val sb = StringBuilder("【已定稿章节】\n")
         val projectDir = ProjectStorageManager.getProjectDir(projectName)
-        files.sortedBy { ProjectStorageManager.extractChapterNumber(it) }.forEach { path ->
+        files.sortedWith(compareBy({ ProjectStorageManager.extractChapterNumber(it) }, { it.lowercase() })).forEach { path ->
             val file = File(projectDir, path)
             if (file.exists()) {
                 sb.appendLine("--- ${file.name} ---")

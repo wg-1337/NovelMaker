@@ -101,13 +101,13 @@ class PreferencesManager(context: Context) {
         return prefs.getInt("ai_active_tab_$projectId", 1)
     }
 
-    // 编辑器：最大定稿章节数（0 = 无限制）
+    // 编辑器：最大定稿章节数（0 = 无限制，默认 50）
     var maxFinalizedChapters: Int
-        get() = prefs.getInt("max_finalized_chapters", 0)
+        get() = prefs.getInt("max_finalized_chapters", 50)
         set(value) = prefs.edit().putInt("max_finalized_chapters", value).apply()
 
-    // 批量淘汰章节数（超限时一次移除最早N章）
+    // 批量淘汰章节数（超限时一次移除最早N章，默认 20）
     var bulkEvictChapters: Int
-        get() = prefs.getInt("bulk_evict_chapters", 1)
+        get() = prefs.getInt("bulk_evict_chapters", 20)
         set(value) = prefs.edit().putInt("bulk_evict_chapters", value).apply()
 }

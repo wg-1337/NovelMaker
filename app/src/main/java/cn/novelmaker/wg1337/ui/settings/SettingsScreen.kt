@@ -1,4 +1,4 @@
-package cn.novelmaker.wg1337.ui.settings
+﻿package cn.novelmaker.wg1337.ui.settings
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -40,6 +40,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     var aiStream by remember { mutableStateOf(prefsManager.aiStreamEnabled) }
     var aiReasoningEffort by remember { mutableStateOf(prefsManager.aiReasoningEffort ?: "high") }
     var aiFetchPlainText by remember { mutableStateOf(prefsManager.aiFetchPlainText) }
+    var aiMaxRounds by remember { mutableStateOf(prefsManager.aiMaxToolRounds.toString()) }
     var showChatHistoryDialog by remember { mutableStateOf(false) }
     var showTokenStatsDialog by remember { mutableStateOf(false) }
     var showPromptViewerDialog by remember { mutableStateOf(false) }
@@ -96,7 +97,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             ) {
                 Column(Modifier.padding(16.dp)) {
                     Text("NovelMaker", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("版本 1.5.1", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("版本 1.5.2", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("点击访问项目仓库 →", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
             }
@@ -141,17 +142,17 @@ fun SettingsScreen(onBack: () -> Unit) {
                             maxFinalized = it.filter { c -> c.isDigit() }
                             prefsManager.maxFinalizedChapters = maxFinalized.toIntOrNull() ?: 0
                         },
-                        label = { Text("定稿上限") }, placeholder = { Text("0 = 无限制") },
+                        label = { Text("定稿上限") }, placeholder = { Text("默认 50，0 = 无限制") },
                         singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = bulkEvict,
                         onValueChange = {
                             bulkEvict = it.filter { c -> c.isDigit() }
-                            val v = bulkEvict.toIntOrNull() ?: 1
+                            val v = bulkEvict.toIntOrNull() ?: 20
                             prefsManager.bulkEvictChapters = v.coerceAtLeast(1)
                         },
-                        label = { Text("批量淘汰") }, placeholder = { Text("超限时一次移除最早 N 章") },
+                        label = { Text("批量淘汰") }, placeholder = { Text("默认 20，超限时一次移除最早 N 章") },
                         singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -204,6 +205,22 @@ fun SettingsScreen(onBack: () -> Unit) {
                         }
                         Switch(checked = aiFetchPlainText, onCheckedChange = { aiFetchPlainText = it; prefsManager.aiFetchPlainText = it })
                     }
+                    // 工具调用轮次
+                    OutlinedTextField(
+                        value = aiMaxRounds,
+                        onValueChange = {
+                            val filtered = it.filter { c -> c.isDigit() || c == '-' }
+                            // 仅允许 "-" 开头或纯数字
+                            if (filtered == "-" || filtered.isEmpty() || filtered.all { c -> c.isDigit() } || (filtered.startsWith("-") && filtered.drop(1).all { c -> c.isDigit() })) {
+                                aiMaxRounds = filtered
+                                prefsManager.aiMaxToolRounds = filtered.toIntOrNull() ?: 5
+                            }
+                        },
+                        label = { Text("工具调用轮次") },
+                        placeholder = { Text("-1 = 无限制，默认 5") },
+                        supportingText = { Text("AI 一轮对话中调用工具的最大次数，如搜索、读写文件") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth()
+                    )
                     Spacer(Modifier.height(4.dp))
                     // 聊天记录管理
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
