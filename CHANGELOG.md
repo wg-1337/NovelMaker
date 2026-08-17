@@ -1,3 +1,32 @@
+# CHANGELOG
+
+## v1.6.0
+
+### 🆕 新功能
+
+- **Windows 桌面版**：Kotlin Multiplatform + Compose Multiplatform 双端工程，同一套 UI 与业务逻辑
+- **横屏三栏工作台**：平板 / Windows 使用 文件树 + 编辑区 + AI 助手 常驻布局，手机竖屏布局不变
+- **Windows 项目目录**：默认 `文档\NovelMaker\`，与 Android 备份格式 `.nmbak` 互通
+- **Windows 自动更新**：GitHub Releases 检测 + 下载 MSI/EXE 并启动安装
+- **Windows 三种安装包**：现代中文 EXE（Inno Setup）+ MSI + 免安装 ZIP
+- **安装选项**：EXE/MSI 安装时可自定义安装位置，可勾选创建桌面快捷方式
+- **淡色/深色主题**：统一蓝紫配色（#515B92 / #DEE0FF），移除跟随壁纸模式
+
+### 🔒 安全
+
+- API Key 不再明文存储：Android 使用 Keystore AES-256-GCM，Windows 使用 DPAPI；旧明文自动迁移
+
+### 🚀 优化
+
+- 修复 Windows 聊天记录不保存（临时文件改名覆盖问题，新增 `.tmp` 自动恢复）
+- 修复 Android 分享无反应、返回键直接退出应用
+- 修复淡色主题残留粉色、Windows 图标/窗口图标不生效
+- 修复重命名项目不同步外部目录的问题（含重名/非法字符校验）
+- 降低 Windows 内存占用（堆/元空间/软件渲染优化）
+- 页面切换改为淡入淡出过渡
+
+---
+
 ## v1.5.2
 
 ### 🆕 新功能
