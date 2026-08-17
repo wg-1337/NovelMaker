@@ -1,7 +1,16 @@
 # ── IDE / OS ──
+# ── IDE / OS ──
 *.iml
 .idea/
+.idea/
 .DS_Store
+
+# ── Gradle / Kotlin 构建产物 ──
+.gradle/
+.kotlin/
+build/
+**/build/
+**/release/
 
 # ── Gradle / Kotlin 构建产物 ──
 .gradle/
@@ -12,6 +21,8 @@ build/
 /captures
 .externalNativeBuild
 .cxx
+
+# ── 本机配置 ──
 
 # ── 本机配置 ──
 local.properties
@@ -38,4 +49,26 @@ push-to-github.bat
 /release
 
 
+CHANGELOG.md
+keystore.properties
+*.keystore
+*.jks
+build-windows.bat
+debug-run.bat
+push-to-github.bat
+
+# ── 临时/日志 ──
+*.tmp
+*.bak
+*.log
+
+# ── 打包产物（即使跑到 build 外也不上传） ──
+*.apk
+*.aab
+*.msi
+*.exe
+
+# ── 宣传/演示文件（集中存放，不上传） ──
+/docs/promo/
+/release
 CHANGELOG.md
