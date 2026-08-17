@@ -36,3 +36,6 @@ push-to-github.bat
 # ── 宣传/演示文件（集中存放，不上传） ──
 /docs/promo/
 /release
+
+
+CHANGELOG.md
