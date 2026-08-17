@@ -23,4 +23,8 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "novelmaker"
-include(":app")
+
+// KMP 双端结构（旧 :app 模块已删除）
+include(":shared")       // 共享逻辑与 Compose UI（Android/Windows 共用）
+include(":androidApp")   // Android 入口壳
+include(":desktopApp")   // Windows 入口壳

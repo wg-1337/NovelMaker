@@ -1,12 +1,12 @@
 # NovelMaker
 
-> 轻量级 Android 小说创作工具 — 本地存储 + DeepSeek AI 辅助写作
+> 轻量级跨平台小说创作工具（Android / Windows） — 本地存储 + DeepSeek AI 辅助写作
 
 ![Platform](https://img.shields.io/badge/Platform-Android-green)
 ![Min SDK](https://img.shields.io/badge/Min%20SDK-24-blue)
 ![Language](https://img.shields.io/badge/Language-Kotlin-purple)
 ![UI](https://img.shields.io/badge/UI-Jetpack%20Compose-blueviolet)
-![Version](https://img.shields.io/badge/Version-1.5.2-orange)
+![Version](https://img.shields.io/badge/Version-1.6.0-orange)
 
 ---
 
@@ -50,8 +50,9 @@ NovelMaker 是一款运行在 Android 设备上的小说写作应用。它将专
 ### 🎨 界面
 - Material 3 设计语言
 - 支持浅色 / 深色 / 跟随壁纸三种主题
-- 引导页（欢迎 → 权限 → 主题选择）
+- 引导页（欢迎 → 权限 → 主题选择；Windows 无需权限步骤）
 - 首次使用步骤引导教程
+- 横屏三栏工作台：平板与 Windows 使用同一套布局（文件树 + 编辑区 + AI 助手常驻右栏）
 
 ### 📊 数据管理
 - Token 用量可视化（分段进度条）
@@ -144,22 +145,46 @@ NovelMaker 为首次使用的用户提供了内置的**步骤引导教程**，�
 
 | 类别 | 技术 |
 |------|------|
-| 语言 | Kotlin |
-| UI 框架 | Jetpack Compose + Material 3 |
+| 语言 | Kotlin Multiplatform |
+| UI 框架 | Compose Multiplatform + Material 3（Android / Windows 共用一套 UI） |
 | 架构 | MVVM (ViewModel + StateFlow) |
 | 存储 | 本地文件系统 + JSON |
+| API Key 保护 | Android Keystore / Windows DPAPI |
 | AI API | DeepSeek Chat API (OpenAI 兼容) |
-| 构建 | Gradle KTS + Version Catalog |
+| 构建 | Gradle KTS + Version Catalog + KMP |
 
 ---
 
 ## 📱 系统要求
 
 - Android 7.0 (API 24) 及以上
-- 存储权限（用于保存小说文件）
+- Windows 10 / 11（64 位）
+- 存储权限（Android，用于保存小说文件）
 - 网络权限（AI 功能需要）
 
 ---
+
+## 🖥️ 双端构建
+
+一个工程同时产出 Android 与 Windows 安装包：
+
+### Android
+1. 项目根目录创建 `keystore.properties`（含 `storeFile/storePassword/keyAlias/keyPassword`，不入库）
+2. Android Studio → Gradle → `androidApp → Tasks → build → assembleRelease`
+3. 产物：`androidApp/build/outputs/apk/release/app-release.apk`（已自动签名）
+
+### Windows
+1. 安装 **Inno Setup 6**（免费，官方：https://jrsoftware.org/isinfo.php）
+2. 双击项目根目录 **`build-windows.bat`**（自动使用本机 `C:\jdk21`）
+3. 一次产出三种格式：
+   - `desktopApp/build/compose/binaries/main/exe/` — **现代中文安装 EXE**（Inno Setup，安装时可选位置、可勾选桌面快捷方式）
+   - `desktopApp/build/compose/binaries/main/msi/` — MSI 安装包
+   - `desktopApp/build/compose/binaries/main/zip/` — 免安装 ZIP（绿色版）
+4. 如需关闭桌面快捷方式，编辑 `build-windows.bat` 里的 `DESKTOP_SHORTCUT=false` 再运行
+5. 项目文件默认保存在 `文档\NovelMaker\`
+
+### 一键双端
+根目录 Gradle 任务 **`packageAll`** 一次执行 Android APK 与 Windows MSI/ZIP/现代 EXE 打包。
 
 
 ## ⚙️ 配置 AI 功能
@@ -176,23 +201,17 @@ NovelMaker 为首次使用的用户提供了内置的**步骤引导教程**，�
 
 ```
 novelmaker/
-├── app/
-│   └── src/main/java/cn/novelmaker/wg1337/
-│       ├── MainActivity.kt              # 主入口
-│       ├── NovelMakerApp.kt             # Application
-│       ├── data/
-│       │   ├── model/                   # 数据模型
-│       │   └── repository/              # 数据仓库
-│       ├── ui/
-│       │   ├── ai/                      # AI 模块
-│       │   ├── editor/                  # 编辑器
-│       │   ├── home/                    # 首页
-│       │   ├── navigation/              # 导航
-│       │   ├── onboarding/              # 引导
-│       │   ├── settings/                # 设置
-│       │   ├── theme/                   # 主题
-│       │   └── tutorial/                # 新手教程
-│       └── utils/                       # 工具类
+├── shared/                              # KMP 共享模块（UI + 业务逻辑）
+│   └── src/
+│       ├── commonMain/                  # 公共声明
+│       ├── jvmSharedMain/               # Android/Windows 共享实现
+│       │   ├── data/                    # 模型与仓库
+│       │   ├── ui/                      # 全部 Compose 界面
+│       │   └── utils/                   # 备份/存储/更新
+│       ├── androidMain/                 # Keystore/权限/文件选择
+│       └── desktopMain/                 # DPAPI/FileDialog/安装器
+├── androidApp/                          # Android 入口（APK）
+├── desktopApp/                          # Windows 入口（EXE/MSI）
 └── gradle/                              # 构建配置
 ```
 
