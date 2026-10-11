@@ -2,6 +2,7 @@ package cn.novelmaker.wg1337.ui.ai
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cn.novelmaker.wg1337.AppLogger
 import cn.novelmaker.wg1337.utils.PreferencesManager
 import cn.novelmaker.wg1337.utils.ProjectStorageManager
 import kotlinx.coroutines.Dispatchers
@@ -18,15 +19,18 @@ class AiChatViewModel : ViewModel() {
     companion object {
         private const val TAG = "AiChatVM"
         const val MAX_TABS = 5
+        // 上下文注入不再使用文本前缀标识，改用 AiChatMessage.isInjection 标记，
+        // 这样注入内容可以原样发送给模型（不加任何修饰）。
     }
 
     private val prefsManager = PreferencesManager()
     private val chatHistoryManager = AiChatHistoryManager()
     private val systemPromptManager = SystemPromptManager()
     private val tokenUsageManager = TokenUsageManager()
-    val finalizedManager = FinalizedManager()  // 公开，供编辑器共享
+    val finalizedManager = FinalizedManager() // 公开，供编辑器共享
 
     enum class AiMode { PLAN, AGENT }
+
     private val _currentMode = MutableStateFlow(AiMode.PLAN)
     val currentMode: StateFlow<AiMode> = _currentMode.asStateFlow()
 
@@ -35,26 +39,83 @@ class AiChatViewModel : ViewModel() {
     private var getCurrentContent: (() -> String)? = null
     private var getCurrentTitle: (() -> String)? = null
 
+    /** 当前项目 id（供设置界面读写项目级配置） */
+    val currentProjectId: String get() = projectId
+
+    /** 当前项目名（供设置界面展示） */
+    val currentProjectName: String get() = projectName
+
     private val _messages = MutableStateFlow<List<AiChatMessage>>(emptyList())
     val messages: StateFlow<List<AiChatMessage>> = _messages.asStateFlow()
 
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
 
+    /** 是否可续传（上次生成被中断且有未完成内容） */
     private val _showResume = MutableStateFlow(false)
     val showResume: StateFlow<Boolean> = _showResume.asStateFlow()
+
+    /** 该轮是否已经有任何内容产出（用于续传判断） */
+    @Volatile private var turnProducedOutput = false
+
+    /**
+     * 本轮是否已结算（防止 stopGeneration 与 onComplete 回调交错导致重复计数/重复收尾）。
+     */
+    @Volatile private var turnFinalized = false
 
     /** 文件变更版本号：AI 每次成功写/删/标记文件后 +1，供编辑器刷新文件树 */
     private val _fileChangeVersion = MutableStateFlow(0)
     val fileChangeVersion: StateFlow<Int> = _fileChangeVersion.asStateFlow()
 
+    /** 待发送的图片附件（发送后清空） */
+    private val _pendingImages = MutableStateFlow<List<ChatImage>>(emptyList())
+    val pendingImages: StateFlow<List<ChatImage>> = _pendingImages.asStateFlow()
+
+    /** 当前生效的注入设置（工作区 + 单对话**按字段**合并的结果） */
+    private val _effectiveSettings = MutableStateFlow(
+        ConversationSettingsManager.Effective(
+            context = ConversationSettingsManager.ContextInjection(),
+            systemPrompt = ConversationSettingsManager.SystemPromptInjection(),
+            contextEnabledSource = ConversationSettingsManager.FieldSource.WORKSPACE,
+            contextStepsSource = ConversationSettingsManager.FieldSource.WORKSPACE,
+            contextTextSource = ConversationSettingsManager.FieldSource.WORKSPACE,
+            systemPromptEnabledSource = ConversationSettingsManager.FieldSource.WORKSPACE,
+            systemPromptTextSource = ConversationSettingsManager.FieldSource.WORKSPACE
+        )
+    )
+    val effectiveSettings: StateFlow<ConversationSettingsManager.Effective> =
+        _effectiveSettings.asStateFlow()
+
+    /**
+     * 系统提示词配置版本号。
+     * 基础提示词或引用文件变化时 +1，供设置界面刷新预览。
+     */
+    private val _promptConfigVersion = MutableStateFlow(0)
+    val promptConfigVersion: StateFlow<Int> = _promptConfigVersion.asStateFlow()
+
+    /** 设置界面改动系统提示词配置后调用，通知刷新 */
+    fun notifyPromptConfigChanged() {
+        _promptConfigVersion.update { it + 1 }
+    }
+
     // ── 标签页（每项目最多 MAX_TABS 个独立会话） ──
-    // 合并为单一 State，避免 tabs / activeTabId 双 StateFlow 收集竞态
     private val _tabState = MutableStateFlow(AiTabState(listOf(AiChatTab(1, "对话1")), 1))
     val tabState: StateFlow<AiTabState> = _tabState.asStateFlow()
 
     @Volatile private var accumulatedContent = ""
     @Volatile private var accumulatedReasoning = ""
+
+    /**
+     * 当前流式 assistant 消息的 id。
+     * 用 id 而非索引定位，避免工具循环 / 用户删消息导致索引失效后写错消息。
+     */
+    @Volatile private var activeAssistantId: String? = null
+
+    /**
+     * 本轮回复对应的 assistant 占位消息 id。
+     * 工具循环的多轮会复用同一条消息，因此这里跨轮次保留。
+     */
+    @Volatile private var accumulatedAssistantId: String? = null
 
     private var lastApiClient: AiApiClient? = null
     private var lastFTools: AiFileTools? = null
@@ -62,22 +123,38 @@ class AiChatViewModel : ViewModel() {
     private var lastMaxToolRounds = 5
     private var lastCurrentRound = 0
 
+    // ───────────────────── 初始化 ─────────────────────
+
     fun init(projectName: String, projectId: String, getContent: () -> String, getTitle: () -> String) {
-        this.projectName = projectName; this.projectId = projectId
-        this.getCurrentContent = getContent; this.getCurrentTitle = getTitle
+        this.projectName = projectName
+        this.projectId = projectId
+        this.getCurrentContent = getContent
+        this.getCurrentTitle = getTitle
+        if (projectId.isEmpty()) return
+
         // 恢复持久化的模式
-        if (projectId.isNotEmpty()) {
-            val savedMode = prefsManager.getAiMode(projectId)
-            _currentMode.value = if (savedMode == 1) AiMode.AGENT else AiMode.PLAN
-            // 发现已有标签页（含旧数据迁移）
-            val usedIds = chatHistoryManager.getUsedTabIds(projectId)
-            // 恢复上次激活的标签页（若已不存在则回退到第一个）
-            val savedTab = prefsManager.getActiveAiTab(projectId)
-            val active = if (usedIds.contains(savedTab)) savedTab else usedIds.first()
-            _tabState.value = AiTabState(usedIds.map { AiChatTab(it, "对话$it") }, active)
-            _messages.value = chatHistoryManager.loadChatHistory(projectId, active)
-        }
+        val savedMode = prefsManager.getAiMode(projectId)
+        _currentMode.value = if (savedMode == 1) AiMode.AGENT else AiMode.PLAN
+
+        // 发现已有标签页（含旧数据迁移）
+        val usedIds = chatHistoryManager.getUsedTabIds(projectId)
+        // 恢复上次激活的标签页（若已不存在则回退到第一个）
+        val savedTab = prefsManager.getActiveAiTab(projectId)
+        val active = if (usedIds.contains(savedTab)) savedTab else usedIds.first()
+        _tabState.value = AiTabState(usedIds.map { AiChatTab(it, "对话$it") }, active)
+        _messages.value = chatHistoryManager.loadChatHistory(projectId, active)
+        refreshEffectiveSettings()
     }
+
+    /** 重新解析当前对话的注入设置（设置改动后调用） */
+    fun refreshEffectiveSettings() {
+        if (projectId.isEmpty()) return
+        _effectiveSettings.value = ConversationSettingsManager.resolve(
+            projectId, _tabState.value.activeTabId, prefsManager
+        )
+    }
+
+    // ───────────────────── 标签页 ─────────────────────
 
     /** 新建标签页（最多 MAX_TABS 个）；AI 处理中禁止 */
     fun addTab() {
@@ -89,12 +166,14 @@ class AiChatViewModel : ViewModel() {
         _tabState.value = AiTabState(current.tabs + AiChatTab(newId, "对话$newId"), newId)
         _messages.value = emptyList()
         _showResume.value = false
-        accumulatedContent = ""; accumulatedReasoning = ""
-        // 一个对话一个记录文件：空对话也立即创建，重启后对话不丢失、可被管理/备份
+        clearAccumulators()
+        _pendingImages.value = emptyList()
         if (projectId.isNotEmpty()) {
+            // 一个对话一个记录文件：空对话也立即创建，重启后对话不丢失、可被管理/备份
             chatHistoryManager.ensureTabFile(projectId, newId)
             prefsManager.saveActiveAiTab(projectId, newId)
         }
+        refreshEffectiveSettings()
     }
 
     /** 切换到指定标签页；AI 处理中禁止 */
@@ -107,74 +186,226 @@ class AiChatViewModel : ViewModel() {
         _tabState.value = current.copy(activeTabId = tabId)
         _messages.value = chatHistoryManager.loadChatHistory(projectId, tabId)
         _showResume.value = false
-        accumulatedContent = ""; accumulatedReasoning = ""
+        clearAccumulators()
+        _pendingImages.value = emptyList()
         if (projectId.isNotEmpty()) {
             chatHistoryManager.ensureTabFile(projectId, tabId) // 首次切换到的对话也确保有记录文件
             prefsManager.saveActiveAiTab(projectId, tabId)
         }
+        refreshEffectiveSettings()
     }
 
-    fun sendMessage(text: String) {
-        if (prefsManager.aiApiKey.isNullOrEmpty() || _isProcessing.value) return
-        _messages.update { it + AiChatMessage(role = "user", content = text) }
+    // ───────────────────── 图片附件 ─────────────────────
+
+    /**
+     * 添加一张图片到待发送附件。
+     * @return null 表示成功，否则为错误提示文案
+     */
+    fun attachImage(bytes: ByteArray, sourceName: String): String? {
+        if (projectId.isEmpty()) return "项目未初始化"
+        val model = DeepSeekApi.normalizeModel(prefsManager.aiModel)
+        if (!DeepSeekApi.supportsVision(model)) {
+            return "当前模型「$model」不支持图像理解，请切换到 ${DeepSeekApi.MODEL_FLASH}"
+        }
+        val image = ChatImageStore.save(projectId, bytes, sourceName)
+            ?: return "图片无法识别或超过 32MB 限制（支持 JPEG / PNG / GIF / WebP）"
+        if (_pendingImages.value.size >= 20) return "单次最多添加 20 张图片"
+        if (_pendingImages.value.none { it.fileName == image.fileName }) {
+            _pendingImages.update { it + image }
+        }
+        return null
+    }
+
+    fun removePendingImage(fileName: String) {
+        _pendingImages.update { list -> list.filterNot { it.fileName == fileName } }
+    }
+
+    fun clearPendingImages() {
+        _pendingImages.value = emptyList()
+    }
+
+    /** 读取图片字节用于界面预览 */
+    fun readImageBytes(image: ChatImage): ByteArray? =
+        if (projectId.isEmpty()) null else ChatImageStore.readBytes(projectId, image)
+
+    // ───────────────────── 发送 ─────────────────────
+
+    /**
+     * 发送用户消息。
+     *
+     * @return 未配置 API Key 等前置条件不满足时返回 false（界面可提示）
+     */
+    fun sendMessage(text: String): Boolean {
+        val trimmed = text.trim()
+        val images = _pendingImages.value
+        if (trimmed.isEmpty() && images.isEmpty()) return false
+        if (prefsManager.aiApiKey.isNullOrEmpty() || _isProcessing.value) return false
+
+        _messages.update {
+            it + AiChatMessage(role = "user", content = trimmed, images = images)
+        }
+        _pendingImages.value = emptyList()
+        beginTurn()
+        return true
+    }
+
+    /** 用户点击内联选项 */
+    fun onUserChoice(choiceText: String): Boolean {
+        if (_isProcessing.value) return false
+        if (prefsManager.aiApiKey.isNullOrEmpty()) return false
+        _messages.update { it + AiChatMessage(role = "user", content = choiceText) }
+        beginTurn()
+        return true
+    }
+
+    /**
+     * 开始一轮请求。
+     * 上下文注入按「模型调用轮次」计数，在每次请求开始前结算
+     * （见 [settleInjectionBeforeCall]）。
+     */
+    private fun beginTurn() {
         _isProcessing.value = true
         _showResume.value = false
+        turnProducedOutput = false
+        turnFinalized = false
         // 立即落盘，避免未完成响应/直接关闭应用时丢失用户消息
         saveCurrentChat()
         performRequest(retry = false)
     }
 
+    /**
+     * 上下文注入：在**每次模型调用之前**结算。
+     *
+     * ## 计数口径：模型调用轮次
+     *
+     * 每发起一次模型请求算一轮 —— 包括**工具循环里的每一轮**。
+     * 不是按用户发言次数，也不是按「助手完成回复」次数：
+     * 一次用户发言若触发 3 轮工具调用，就累计 3 轮。
+     *
+     * 触发时机放在请求开始前，而不是等模型回复完：
+     * 这样阈值一到，**本次请求**就带上注入内容，不必等到下一轮才生效。
+     *
+     * ## 注入位置：上下文末尾
+     *
+     * 注入作为一条 user 消息追加到历史末尾。
+     * 若它前面紧跟用户发言，净化器会合并为 `用户发言\n注入内容` ——
+     * 用户发言在前、注入在后，既落在上下文最后，
+     * 又不会让模型把注入误当成用户指令。
+     */
+    private fun settleInjectionBeforeCall() {
+        val settings = _effectiveSettings.value.context
+        if (!settings.isUsable || projectId.isEmpty()) return
+
+        val tabId = _tabState.value.activeTabId
+        val rounds = prefsManager.getInjectionStepCounter(projectId, tabId)
+        if (rounds < settings.everyNSteps) return
+
+        val text = settings.text.trim()
+        // 与末尾已有注入完全相同则不重复插入
+        val last = _messages.value.lastOrNull()
+        if (last != null && last.isInjection && last.content == text) {
+            prefsManager.setInjectionStepCounter(projectId, tabId, 0)
+            return
+        }
+
+        _messages.update {
+            it + AiChatMessage(role = "user", content = text, isInjection = true)
+        }
+        prefsManager.setInjectionStepCounter(projectId, tabId, 0)
+        AppLogger.d(TAG, "已注入上下文（每 ${settings.everyNSteps} 轮模型调用）：${text.take(40)}")
+    }
+
+    /** 累计一次模型调用轮次 */
+    private fun countCallRound() {
+        if (projectId.isEmpty()) return
+        val tabId = _tabState.value.activeTabId
+        prefsManager.setInjectionStepCounter(
+            projectId, tabId,
+            prefsManager.getInjectionStepCounter(projectId, tabId) + 1
+        )
+    }
+
     fun stopGeneration() {
+        if (turnFinalized) return
+        turnFinalized = true
         _isProcessing.value = false
-        _showResume.value = accumulatedContent.isNotEmpty()
-        saveCurrentChat()
-    }
-
-    fun resumeFromInterruption() {
-        _messages.update { if (it.lastOrNull()?.role == "system") it.dropLast(1) else it }
-        _isProcessing.value = true
-        _showResume.value = false
-        performRequest(retry = true)
-    }
-
-    fun editMessage(index: Int, newContent: String) {
-        _messages.update { msgs -> msgs.toMutableList().also { if (index in it.indices) it[index] = it[index].copy(content = newContent) } }
+        _showResume.value = turnProducedOutput
+        // 收尾未完成的工具调用链，避免留下悬空 tool_calls 污染后续请求
+        dropDanglingToolCalls()
         saveCurrentChat()
     }
 
     /**
-     * 从指定索引重发消息：截断该消息之后的所有对话，修改该消息内容，重新发送
+     * 续传：从上次中断处继续生成。
+     * 与旧实现的区别：不再粗暴丢弃末尾消息，而是依赖净化器处理不完整链路。
      */
+    fun resumeFromInterruption() {
+        if (_isProcessing.value) return
+        if (prefsManager.aiApiKey.isNullOrEmpty()) return
+        _isProcessing.value = true
+        _showResume.value = false
+        turnFinalized = false
+        performRequest(retry = true)
+    }
+
+    // ───────────────────── 消息编辑 ─────────────────────
+
+    fun editMessage(index: Int, newContent: String) {
+        _messages.update { msgs ->
+            msgs.toMutableList().also {
+                if (index in it.indices) it[index] = it[index].copy(content = newContent)
+            }
+        }
+        saveCurrentChat()
+    }
+
+    /** 从指定索引重发：截断该消息之后的所有对话，修改后重新发送 */
     fun resendFrom(index: Int, newContent: String) {
         if (index !in _messages.value.indices) return
         if (_isProcessing.value) return
+        if (prefsManager.aiApiKey.isNullOrEmpty()) return
 
         _messages.update { msgs ->
             val truncated = msgs.take(index).toMutableList()
             truncated.add(msgs[index].copy(content = newContent))
             truncated
         }
-        _isProcessing.value = true
-        _showResume.value = false
-        performRequest(retry = false)
+        // 截断可能切断了工具调用链，收尾清理一次
+        dropDanglingToolCalls()
+        beginTurn()
     }
 
+    /**
+     * 删除单条消息。
+     *
+     * 删除后必须清理工具链：删掉一条 assistant 会让它后面的 tool 结果变成孤儿，
+     * 删掉一条 tool 结果会让前面的 assistant.tool_calls 配不齐 —— 两者都会导致 400。
+     */
     fun deleteMessage(index: Int) {
-        _messages.update { msgs -> msgs.toMutableList().also { if (index in it.indices) it.removeAt(index) } }
+        _messages.update { msgs ->
+            msgs.toMutableList().also { if (index in it.indices) it.removeAt(index) }
+        }
+        dropDanglingToolCalls()
         saveCurrentChat()
     }
+
+    /** 按 id 删除消息（流式过程中的安全定位方式） */
+    private fun deleteMessageById(id: String) {
+        _messages.update { msgs -> msgs.filterNot { it.id == id } }
+    }
+
+    // ───────────────────── 请求 ─────────────────────
 
     private fun performRequest(retry: Boolean) {
         val apiKey = prefsManager.aiApiKey
         if (apiKey.isNullOrEmpty()) {
-            // 未配置 API Key：复位处理状态，避免永久卡在“AI 思考中”
+            // 未配置 API Key：复位处理状态，避免永久卡在「AI 思考中」
             _isProcessing.value = false
             _showResume.value = false
             return
         }
-        val baseUrl = prefsManager.aiBaseUrl ?: "https://api.deepseek.com"
-        val model = prefsManager.aiModel ?: "deepseek-chat"
-        val useStream = prefsManager.aiStreamEnabled
+        val baseUrl = prefsManager.aiBaseUrl ?: DeepSeekApi.DEFAULT_BASE_URL
+        val model = DeepSeekApi.normalizeModel(prefsManager.aiModel)
         val maxRounds = prefsManager.aiMaxToolRounds
         val fTools = AiFileTools(
             projectName, projectId, _currentMode.value,
@@ -183,202 +414,378 @@ class AiChatViewModel : ViewModel() {
         )
         val tools = fTools.getToolDefinitions()
         val apiClient = AiApiClient(
-            apiKey = apiKey, baseUrl = baseUrl, model = model,
-            reasoningEffort = prefsManager.aiReasoningEffort ?: "high",
-            thinkingEnabled = true
+            apiKey = apiKey,
+            baseUrl = baseUrl,
+            model = model,
+            reasoningEffort = prefsManager.aiReasoningEffort
         )
         lastApiClient = apiClient; lastFTools = fTools; lastTools = tools; lastMaxToolRounds = maxRounds
         if (!retry) lastCurrentRound = 0
-        sendWithToolLoop(apiClient, fTools, tools, useStream, maxRounds, if (retry) lastCurrentRound else 0)
+        sendWithToolLoop(
+            apiClient, fTools, tools, maxRounds,
+            startRound = if (retry) lastCurrentRound else 0,
+            // 续传时沿用上一轮已存在的 assistant 占位消息，避免产生重复气泡
+            placeholderId = accumulatedAssistantId
+        )
     }
 
     private fun sendWithToolLoop(
-        apiClient: AiApiClient, fTools: AiFileTools, tools: JSONArray,
-        useStream: Boolean, maxRounds: Int, startRound: Int
+        apiClient: AiApiClient,
+        fTools: AiFileTools,
+        tools: JSONArray,
+        maxRounds: Int,
+        startRound: Int,
+        placeholderId: String?
     ) {
         if (!_isProcessing.value) return
-        val apiMessages = mutableListOf<AiChatMessage>()
 
-        // 1. 系统提示词（固定前缀 → 标记 cache_control）
-        val fullPrompt = buildSystemPrompt()
-        val sysMsg = AiChatMessage(role = "system", content = fullPrompt)
-        apiMessages.add(sysMsg)
+        // 每次模型调用记一轮，并在达到间隔时先结算上下文注入，
+        // 使注入内容进入**本次**请求（而不是等下一轮）。
+        countCallRound()
+        settleInjectionBeforeCall()
 
-        // 2. 已定稿章节拼接（固定前缀 → 标记 cache_control）
-        val finalized = buildFinalizedChapters()
-        if (finalized.isNotEmpty()) {
-            apiMessages.add(AiChatMessage(role = "system", content = finalized))
+        val (prefixMessages, cacheableCount) = buildPrefixMessages()
+        val messagesJson = ApiMessageSanitizer.build(
+            prefixMessages = prefixMessages,
+            history = _messages.value,
+            projectId = projectId,
+            // 携带 tools 的请求必须回传历史 reasoning_content，否则 API 返回 400
+            includeReasoning = tools.length() > 0,
+            cacheablePrefixCount = cacheableCount,
+            // 图像理解仅 deepseek-flash 支持；历史里的图片发给不支持的模型会返回 400
+            allowImages = DeepSeekApi.supportsVision(prefsManager.aiModel ?: DeepSeekApi.MODEL_FLASH)
+        )
+
+        if (messagesJson.length() == 0) {
+            // 没有任何可发送内容，放弃本次请求而不是发空请求
+            _isProcessing.value = false
+            return
         }
 
-        // 3. 当前编辑内容（可变 → 不缓存）
-        val ctx = buildContextContent()
-        if (ctx.isNotEmpty()) {
-            apiMessages.add(AiChatMessage(role = "system", content = ctx))
-        }
-
-        // 4. 历史对话（排除 choice 角色——那是 UI 专用；保留 system 状态提示）
-        apiMessages.addAll(_messages.value.filter { it.role != "choice" })
-
-        // 构建 JSON：仅真正的固定前缀（系统提示词 + 定稿章节）加 cache_control。
-        // 当前编辑内容 ctx 是可变的，绝不能标缓存，否则每次编辑都会打碎缓存。
-        val cacheCount = 1 + (if (finalized.isNotEmpty()) 1 else 0)
-        val msgsJson = JSONArray()
-        for (i in apiMessages.indices) {
-            val cache = i < cacheCount
-            msgsJson.put(apiMessages[i].toJsonObject(cacheControl = cache))
-        }
-
-        // Token 统计：记录系统提示词
+        // Token 统计：系统提示词部分
         if (projectId.isNotEmpty()) {
-            tokenUsageManager.recordSystemPrompt(projectId, fullPrompt.length + finalized.length)
+            val promptChars = prefixMessages.sumOf { it.content.length }
+            tokenUsageManager.recordSystemPrompt(projectId, promptChars)
         }
 
-        val assistantIdx = _messages.value.size
-        _messages.update { it + AiChatMessage(role = "assistant", content = "", reasoningContent = "") }
-        accumulatedContent = ""; accumulatedReasoning = ""
+        // 复用或新建 assistant 占位消息：工具循环的多轮都写进同一条，
+        // 界面上表现为一个气泡 + 折叠的多条工具调用（与 DeepSeek 的行为一致）
+        val assistantId = placeholderId ?: java.util.UUID.randomUUID().toString()
+        accumulatedAssistantId = assistantId
+        activeAssistantId = assistantId
+        if (placeholderId == null) {
+            _messages.update {
+                it + AiChatMessage(id = assistantId, role = "assistant", content = "", reasoningContent = "")
+            }
+        } else {
+            // 新一轮工具循环：清空正文，准备接收本轮回复
+            _messages.update { msgs ->
+                msgs.toMutableList().also { list ->
+                    val idx = list.indexOfFirst { it.id == assistantId }
+                    if (idx >= 0) list[idx] = list[idx].copy(content = "", reasoningContent = "")
+                }
+            }
+        }
+        accumulatedContent = ""
+        accumulatedReasoning = ""
+
         var toolCallsHandled = false
 
         apiClient.sendChatRequestStream(
-            messages = emptyList(), tools = tools, prebuiltMessagesJson = msgsJson,
+            messagesJson = messagesJson,
+            tools = tools,
             onToken = { content, reasoning ->
                 if (!_isProcessing.value) return@sendChatRequestStream
-                accumulatedContent += content; accumulatedReasoning += reasoning
+                if (content.isEmpty() && reasoning.isEmpty()) return@sendChatRequestStream
+                accumulatedContent += content
+                accumulatedReasoning += reasoning
+                turnProducedOutput = true
+                val snapshotContent = accumulatedContent
+                val snapshotReasoning = accumulatedReasoning
                 _messages.update { msgs ->
-                    msgs.toMutableList().also { if (assistantIdx < it.size) it[assistantIdx] = it[assistantIdx].copy(content = accumulatedContent, reasoningContent = accumulatedReasoning) }
+                    msgs.toMutableList().also { list ->
+                        val idx = list.indexOfFirst { it.id == assistantId }
+                        if (idx >= 0) {
+                            list[idx] = list[idx].copy(
+                                content = snapshotContent,
+                                reasoningContent = snapshotReasoning
+                            )
+                        }
+                    }
                 }
             },
-            onToolCalls = { tcs -> toolCallsHandled = true; handleToolCalls(apiClient, fTools, tools, useStream, maxRounds, startRound, assistantIdx, tcs) },
+            onToolCalls = { tcs ->
+                toolCallsHandled = true
+                handleToolCalls(apiClient, fTools, tools, maxRounds, startRound, assistantId, tcs)
+            },
             onComplete = { success, error ->
-                if (!toolCallsHandled) {
-                    _isProcessing.value = false
-                    if (!success || error != null) { _showResume.value = true; _messages.update { msgs -> msgs.toMutableList().also { if (assistantIdx < it.size && it[assistantIdx].content.isEmpty() && error != null) it[assistantIdx] = it[assistantIdx].copy(content = "⚠️ $error") } } }
-                    // Token 统计：记录对话
-                    if (projectId.isNotEmpty()) {
-                        val lastUserMsg = _messages.value.getOrNull(assistantIdx - 1)?.content?.length ?: 0
-                        tokenUsageManager.recordChat(projectId, lastUserMsg, accumulatedContent.length)
-                    }
-                    saveCurrentChat()
+                if (toolCallsHandled) return@sendChatRequestStream
+                // 已被 stopGeneration 结算过则不再重复处理（否则步数会重复累加）
+                if (turnFinalized) return@sendChatRequestStream
+                turnFinalized = true
+                _isProcessing.value = false
+
+                if (!success) {
+                    _showResume.value = turnProducedOutput
+                    if (error != null) appendErrorToAssistant(assistantId, error)
+                    // 失败同样要清理残缺的工具链，否则下一次请求可能被 400 拒绝
+                    dropDanglingToolCalls()
+                } else {
+                    // 调用轮次已在请求开始前计数（见 sendWithToolLoop）
+                    finishTurn(assistantId) // 无工具调用的纯文本回复：本轮结束
                 }
+                saveCurrentChat()
+            },
+            onUsage = { usage ->
+                if (projectId.isNotEmpty()) tokenUsageManager.recordFromUsage(projectId, usage)
             }
         )
     }
 
-    private fun buildSystemPrompt(): String {
-        val sb = StringBuilder()
-        // 基础提示词 + Plan 阶段追加
-        sb.append(systemPromptManager.getFullPrompt(projectId))
-        // 联网搜索说明（两种模式通用）
-        sb.append("\n\n【联网搜索】当你遇到不了解的信息、不确定的事实、没见过的文体/写作风格或概念，或用户需要最新资料、范文示例时，使用 webSearch 工具联网搜索。优先使用 bing 搜索引擎（默认），google 作为备选。搜索关键词由你根据用户需求自行拟定，可以一次搜索多个关键词。需要查看搜索结果中某个链接的具体内容或获取参考资料原文时，使用 fetchUrl 工具打开该网址获取页面 HTML，然后综合内容回答用户。")
-        // Plan 模式指示
-        if (_currentMode.value == AiMode.PLAN) {
-            sb.append("\n\n【当前模式：Plan 计划模式】\n")
-            sb.append("你只能在大纲/目录下创建和修改文件。不能写入小说主体/目录。\n")
-            sb.append("在计划过程中，请将收集到的写作要求（类型、风格、语言、字数、每章字数等）写入 大纲/写作设定.txt。\n")
-            sb.append("【何时输出 [PLAN_COMPLETE]】当大纲、角色、章节规划已完善，且关键设定已写入大纲文件后，在回复末尾单独一行输出 [PLAN_COMPLETE]，系统会弹出选项。切换后会自动将大纲文件内容导入系统提示词。\n")
-            sb.append("\n")
-            sb.append("【方向选择】需要用户选择时，务必使用（每次只问一个问题）：\n")
-            sb.append("[DIRECTION_CHOICES:选项1|选项2|选项3]\n")
-        } else {
-            sb.append("\n\n【当前模式：Agent 写作模式】可以自由读写所有目录，专注创作小说正文。如需调整计划，用户可以手动切换回 Plan 模式。")
-            // 定稿主动引导
-            sb.append("\n\n【主动引导定稿】当小说主体目录已有较多章节（3 章及以上）时，应主动提醒用户将已完成、确定不再修改的章节标记为定稿，并向用户说明定稿的好处：1) 定稿章节会纳入缓存前缀，后续对话命中缓存，更省 Token、回复更快；2) 每次写作前你都会回顾全部定稿章节，保证剧情、人物设定与写作风格前后一致；3) 避免上下文过长导致早期关键设定被挤出。用户同意后，引导用户使用文件树中长按章节的「标记定稿」功能（由用户在编辑器里手动操作，你无法代替用户定稿）。")
+    /** 生成结束后收尾：丢弃空 assistant 占位、清理悬空工具链 */
+    private fun finishTurn(assistantId: String) {
+        val msg = _messages.value.firstOrNull { it.id == assistantId }
+        if (msg != null && msg.content.isEmpty() && !msg.hasToolCalls() && !msg.hasImages()) {
+            // 完全空的回复（例如模型只输出了思考）：保留思考内容供用户查看，否则删除
+            if (msg.reasoningContent.isEmpty()) deleteMessageById(assistantId)
         }
-        return sb.toString()
+        dropDanglingToolCalls()
+        if (activeAssistantId == assistantId) activeAssistantId = null
+        accumulatedAssistantId = null
     }
 
-    private fun buildFinalizedChapters(): String {
-        if (projectId.isEmpty()) return ""
-        val files = finalizedManager.getFinalizedFiles(projectId)
-        if (files.isEmpty()) return ""
-        val sb = StringBuilder("【已定稿章节】\n")
-        val projectDir = ProjectStorageManager.getProjectDir(projectName)
-        files.sortedWith(compareBy({ ProjectStorageManager.extractChapterNumber(it) }, { it.lowercase() })).forEach { path ->
-            val file = File(projectDir, path)
-            if (file.exists()) {
-                sb.appendLine("--- ${file.name} ---")
-                sb.appendLine(file.readText())
+    /**
+     * 给失败的消息追加错误提示。
+     * 若该消息还是空的，就用错误信息占位，避免留下空 assistant 污染上下文。
+     */
+    private fun appendErrorToAssistant(assistantId: String, error: String) {
+        _messages.update { msgs ->
+            msgs.toMutableList().also { list ->
+                val idx = list.indexOfFirst { it.id == assistantId }
+                if (idx >= 0) {
+                    val cur = list[idx]
+                    list[idx] = if (cur.content.isEmpty() && !cur.hasToolCalls()) {
+                        cur.copy(content = error)
+                    } else {
+                        cur.copy(content = cur.content + "\n\n" + error)
+                    }
+                } else {
+                    list.add(AiChatMessage(role = "assistant", content = error, localOnly = true))
+                }
             }
         }
-        return sb.toString()
     }
 
-    private fun buildContextContent(): String {
-        val content = getCurrentContent?.invoke() ?: return ""
-        if (content.isBlank()) return ""
-        return "【正在编辑：${getCurrentTitle?.invoke() ?: "未命名"}】\n$content"
+    /**
+     * 组装固定前缀消息。
+     *
+     * 拼装逻辑全部交给 [SystemPromptComposer]（唯一真源），
+     * 这里只负责把结果转成消息并取出缓存断点。
+     *
+     * 缓存断点由 composer 计算：基础提示词 / 引用文件 / 已定稿章节 进缓存前缀，
+     * 用户追加、平台规则、当前编辑内容 都排在断点之外 ——
+     * 所以用户改「系统提示词注入」或切换模式不会打碎定稿章节的缓存。
+     */
+    private fun buildPrefixMessages(): Pair<List<AiChatMessage>, Int> {
+        val composed = SystemPromptComposer.compose(
+            SystemPromptComposer.Input(
+                projectId = projectId,
+                projectName = projectName,
+                mode = _currentMode.value,
+                injection = _effectiveSettings.value.systemPrompt,
+                currentContent = getCurrentContent?.invoke() ?: "",
+                currentTitle = getCurrentTitle?.invoke() ?: ""
+            )
+        )
+
+        val messages = mutableListOf<AiChatMessage>()
+        var cacheableCount = 0
+        composed.parts.forEachIndexed { index, part ->
+            if (!part.isUsable) return@forEachIndexed
+            messages.add(AiChatMessage(role = part.role, content = part.content))
+            if (index < composed.cacheableCount) cacheableCount++
+        }
+        return messages to cacheableCount
     }
+
+    /**
+     * 最终发给模型的系统提示词（只含 system 部分，供设置界面预览）。
+     * 与实际请求走同一套拼装，因此「看到的 = 实际发的」。
+     */
+    fun buildPromptPreview(): String = SystemPromptComposer.preview(
+        SystemPromptComposer.Input(
+            projectId = projectId,
+            projectName = projectName,
+            mode = _currentMode.value,
+            injection = _effectiveSettings.value.systemPrompt
+        )
+    )
+
+    // ───────────────────── 模式切换 ─────────────────────
 
     fun switchToAgentMode() {
         _currentMode.value = AiMode.AGENT
         if (projectId.isNotEmpty()) prefsManager.saveAiMode(projectId, 1)
-        // 将大纲目录中的设定文件内容追加到系统提示词
-        appendOutlineToPrompt()
-        systemPromptManager.exportToProjectFile(projectName, projectId)
-        _messages.update { it + AiChatMessage(role = "system", content = "✅ 已切换到 Agent 写作模式，现在可以写入小说主体了。") }
+        // 把大纲目录下的设定文件登记为「引用文件」。
+        //
+        // 旧实现是把文件内容**快照**追加进 additions：每次切模式都再灌一遍，
+        // 同一份大纲会在提示词里重复出现；而且大纲更新后提示词不会跟着变。
+        // 现在只登记路径，内容在每次拼装时现读（见 SystemPromptComposer 第 2 层）。
+        val added = registerOutlineAsContextFiles()
+        _messages.update {
+            it + AiChatMessage(
+                role = "system",
+                content = buildString {
+                    append("已切换到 Agent 写作模式，现在可以写入小说主体了。")
+                    if (added > 0) {
+                        append("已把大纲目录的 $added 个设定文件加入系统提示词引用文件。")
+                    }
+                }
+            )
+        }
     }
 
     fun switchToPlanMode() {
         _currentMode.value = AiMode.PLAN
         if (projectId.isNotEmpty()) prefsManager.saveAiMode(projectId, 0)
-        _messages.update { it + AiChatMessage(role = "system", content = "🗺️ 已切换到 Plan 计划模式，只能修改大纲目录。如需调整计划请继续。") }
+        _messages.update {
+            it + AiChatMessage(
+                role = "system",
+                content = "已切换到 Plan 计划模式，只能修改大纲目录。如需调整计划请继续。"
+            )
+        }
     }
 
     /**
-     * 将大纲目录下的设定文件内容追加到系统提示词
+     * 把大纲目录下的 .txt 设定文件登记为引用文件（幂等）。
+     * @return 本次新登记的文件数
      */
-    private fun appendOutlineToPrompt() {
-        try {
-            val outlineDir = ProjectStorageManager.getProjectSubDir(projectName, "大纲") ?: return
-            if (!outlineDir.exists()) return
-            val txtFiles = outlineDir.listFiles()?.filter { it.extension.equals("txt", true) && it.isFile } ?: return
-            if (txtFiles.isEmpty()) return
-            val sb = StringBuilder()
-            for (file in txtFiles.sortedBy { it.name }) {
-                val content = file.readText().take(8000) // 限制单文件
-                if (content.isNotBlank()) {
-                    sb.appendLine("=== ${file.nameWithoutExtension} ===")
-                    sb.appendLine(content)
-                    sb.appendLine()
-                }
+    private fun registerOutlineAsContextFiles(): Int {
+        if (projectId.isEmpty() || projectName.isEmpty()) return 0
+        return try {
+            val outlineDir = ProjectStorageManager.getProjectSubDir(projectName, "大纲")
+            if (!outlineDir.exists()) return 0
+            val txtFiles = outlineDir.listFiles()
+                ?.filter { it.extension.equals("txt", true) && it.isFile }
+                ?: return 0
+            var added = 0
+            txtFiles.sortedBy { it.name }.forEach { file ->
+                // addContextFile 自带去重，重复切换模式不会累积
+                if (systemPromptManager.addContextFile(projectId, "大纲/${file.name}")) added++
             }
-            if (sb.isNotEmpty()) {
-                systemPromptManager.addToPrompt(projectId, "【写作设定（来自大纲）】\n$sb")
-                systemPromptManager.exportToProjectFile(projectName, projectId)
-            }
-        } catch (_: Exception) {}
+            if (added > 0) _promptConfigVersion.update { it + 1 }
+            added
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "登记大纲引用文件失败: ${e.message}")
+            0
+        }
     }
 
-    fun onUserChoice(choiceText: String) {
-        if (_isProcessing.value) return  // 防止重复/并发请求
-        if (prefsManager.aiApiKey.isNullOrEmpty()) return  // 未配置 Key 时静默忽略，避免卡死
-        _messages.update { it + AiChatMessage(role = "user", content = choiceText) }
-        _isProcessing.value = true
-        _showResume.value = false
-        performRequest(retry = false)
-    }
+    // ───────────────────── 工具调用 ─────────────────────
 
     private fun handleToolCalls(
-        apiClient: AiApiClient, fTools: AiFileTools, tools: JSONArray,
-        useStream: Boolean, maxRounds: Int, currentRound: Int,
-        assistantIdx: Int, toolCalls: List<ToolCall>
+        apiClient: AiApiClient,
+        fTools: AiFileTools,
+        tools: JSONArray,
+        maxRounds: Int,
+        currentRound: Int,
+        assistantIdx: String,
+        toolCalls: List<ToolCall>
     ) {
-        _messages.update { msgs -> msgs.toMutableList().also { if (assistantIdx < it.size) it[assistantIdx] = it[assistantIdx].copy(toolCalls = toolCalls) } }
+        // 把工具调用挂到 assistant 消息上（按 id 定位，避免索引失效）
+        _messages.update { msgs ->
+            msgs.toMutableList().also { list ->
+                val i = list.indexOfFirst { it.id == assistantIdx }
+                if (i >= 0) list[i] = list[i].copy(toolCalls = toolCalls)
+            }
+        }
+        if (!_isProcessing.value) return
+
+        // 顺序执行工具并把结果追加为 tool 消息
         val results = toolCalls.map { tc ->
-            val r = try { fTools.executeToolCall(tc.function.name, tc.function.arguments) } catch (e: Exception) { "❌ ${e.message}" }
-            // Token 统计：记录工具调用
+            val r = try {
+                fTools.executeToolCall(tc.function.name, tc.function.arguments)
+            } catch (e: Exception) {
+                "工具调用错误: ${e.message}"
+            }
             if (projectId.isNotEmpty()) tokenUsageManager.recordToolCall(projectId, r.length)
             AiChatMessage(role = "tool", content = r, toolCallId = tc.id)
         }
         _messages.update { it + results }
+        turnProducedOutput = true
+
         if (!_isProcessing.value) return
         val nextRound = currentRound + 1
         if (maxRounds < 0 || nextRound < maxRounds) {
             lastCurrentRound = nextRound
-            viewModelScope.launch(Dispatchers.IO) { sendWithToolLoop(apiClient, fTools, tools, useStream, maxRounds, nextRound) }
+            viewModelScope.launch(Dispatchers.IO) {
+                sendWithToolLoop(
+                    apiClient, fTools, tools, maxRounds, nextRound,
+                    placeholderId = assistantIdx // 复用同一条 assistant 消息
+                )
+            }
         } else {
-            _messages.update { it + AiChatMessage(role = "system", content = "已达到最大工具调用轮次($maxRounds)") }
-            _isProcessing.value = false; saveCurrentChat()
+            _messages.update {
+                it + AiChatMessage(
+                    role = "system",
+                    content = "已达到最大工具调用轮次（$maxRounds）"
+                )
+            }
+            // 调用轮次已在每次请求开始前计数（见 sendWithToolLoop），此处无需再补
+            _isProcessing.value = false
+            dropDanglingToolCalls()
+            saveCurrentChat()
         }
+    }
+
+    /**
+     * 清理悬空的工具调用链。
+     *
+     * 场景：模型已发起 tool_calls，但生成被中断 / 工具结果未能写入。
+     * 这类消息留在历史里会导致后续请求 400 —— 净化器虽能兜底，
+     * 但这里主动清掉可以让历史更干净、也让 UI 不显示无意义的空工具轮次。
+     */
+    private fun dropDanglingToolCalls() {
+        _messages.update { msgs ->
+            val result = mutableListOf<AiChatMessage>()
+            var i = 0
+            while (i < msgs.size) {
+                val msg = msgs[i]
+                val pending = msg.toolCalls
+                if (msg.isAssistant() && !pending.isNullOrEmpty()) {
+                    val needed = pending.map { it.id }.toSet()
+                    val available = mutableSetOf<String>()
+                    var j = i + 1
+                    while (j < msgs.size && msgs[j].isTool()) {
+                        msgs[j].toolCallId?.let { available.add(it) }
+                        j++
+                    }
+                    if (available.containsAll(needed)) {
+                        // 链路完整：整段原样保留
+                        for (k in i until j) result.add(msgs[k])
+                    } else {
+                        // 链路残缺：丢弃配不上的 tool 结果，保留 assistant 文本
+                        if (msg.content.isNotEmpty()) {
+                            result.add(msg.copy(toolCalls = null))
+                        }
+                    }
+                    i = j
+                } else {
+                    result.add(msg)
+                    i++
+                }
+            }
+            result
+        }
+    }
+
+    // ───────────────────── 持久化 ─────────────────────
+
+    private fun clearAccumulators() {
+        accumulatedContent = ""
+        accumulatedReasoning = ""
+        activeAssistantId = null
+        accumulatedAssistantId = null
     }
 
     private fun saveCurrentChat() {
@@ -392,7 +799,10 @@ class AiChatViewModel : ViewModel() {
         saveCurrentChat()
     }
 
-    override fun onCleared() { super.onCleared(); saveCurrentChat() }
+    override fun onCleared() {
+        super.onCleared()
+        saveCurrentChat()
+    }
 }
 
 /** AI 标签页（每项目最多 5 个独立会话） */

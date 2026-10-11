@@ -68,14 +68,14 @@ fun HomeScreen(
             TutorialStep(
                 title = "创建项目",
                 description = "点击右下角的 + 按钮，输入小说名称即可创建项目。" +
-                        "\n\n系统会自动创建「大纲」「提示词」「小说主体」目录结构。"
+                        "\n\n系统会自动创建「大纲」「小说主体」目录结构。"
             ),
             TutorialStep(
                 title = "开始创作",
                 description = "创建项目后，点击项目卡片进入编辑器。" +
-                        "\n\n点击卡片右侧的 ⋮ 按钮可以重命名、备份或删除项目。" +
-                        "\n\n右上角的 ⚙️ 按钮可以进入设置页面。" +
-                        "\n\n进入编辑器后点击 ✨ 即可使用 AI 写作助手（规划大纲、撰写正文、联网搜索）。"
+                        "\n\n点击卡片右侧的更多按钮可以重命名、备份或删除项目。" +
+                        "\n\n右上角的设置按钮可以进入设置页面。" +
+                        "\n\n进入编辑器后点击星标按钮即可使用 AI 写作助手（规划大纲、撰写正文、图片输入、联网搜索）。"
             )
         )
     }
@@ -210,9 +210,9 @@ fun HomeScreen(
                     val ok = BackupManager.backup(project, pwd, project.name, file)
                     if (ok) {
                         showBackupDialog = null
-                        backupMsg = "✅ 备份已保存到 NovelMaker/backups/"
+                        backupMsg = "备份已保存到 NovelMaker/backups/"
                     } else {
-                        msg = "❌ 备份失败"
+                        msg = "备份失败"
                     }
                 }) { Text("开始备份") }
             },
@@ -342,11 +342,18 @@ private fun CreateProjectDialog(
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
-                        Text(
-                            "📁 即将创建的目录结构：\n/NovelMaker/\n  └── $name/\n      ├── 大纲/\n      ├── 提示词/\n      └── 小说主体/",
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        Column(Modifier.padding(12.dp)) {
+                            Text(
+                                "即将创建的目录结构",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "NovelMaker/\n  └── $name/\n      ├── 大纲/\n      └── 小说主体/",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
             }

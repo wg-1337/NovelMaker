@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
             if (dest.exists()) {
                 Toast.makeText(
                     this,
-                    "备份文件已保存到 NovelMaker/backups/，请前往 设置 → 备份与恢复 → 恢复 中手动恢复",
+                    "备份文件已保存到 NovelMaker/backups/，请前往「设置 - 备份与恢复 - 恢复」中手动恢复",
                     Toast.LENGTH_LONG
                 ).show()
             }

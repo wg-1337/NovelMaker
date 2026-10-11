@@ -1,4 +1,4 @@
-import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+﻿import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -51,7 +51,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
             packageName = "novelmaker"
-            packageVersion = "1.6.0"
+            packageVersion = "1.7.0"
             description = "轻量级小说创作工具 - AI 辅助写作"
             vendor = "wg-1337"
 
@@ -76,7 +76,7 @@ tasks.register<Zip>("packageZip") {
     description = "打包免安装 ZIP（绿色版）"
     dependsOn("createDistributable")
     from(layout.buildDirectory.dir("compose/binaries/main/app/novelmaker"))
-    archiveFileName.set("novelmaker-1.6.0.zip")
+    archiveFileName.set("novelmaker-1.7.0.zip")
     destinationDirectory.set(layout.buildDirectory.dir("compose/binaries/main/zip"))
 }
 

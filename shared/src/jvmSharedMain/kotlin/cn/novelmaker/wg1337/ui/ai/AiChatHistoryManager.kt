@@ -77,11 +77,18 @@ class AiChatHistoryManager {
                     reasoningContent = obj.optString("reasoning_content", ""),
                     toolCalls = toolCalls,
                     toolCallId = obj.optString("tool_call_id", ""),
+                    images = parseImages(obj.optJSONArray("images")),
+                    isInjection = obj.optBoolean("is_injection", false),
+                    localOnly = obj.optBoolean("local_only", false),
                     timestamp = obj.getLong("timestamp")
                 )
             }
-            // 清理不完整的 tool_calls：移除没有后续 tool 响应的 tool_calls
-            cleanupIncompleteToolCalls(messages)
+            // 注意：这里不再「就地清洗」不完整的 tool_calls。
+            // 历史上曾在加载/保存时把悬空 tool_calls 从消息上剥离，结果是：
+            // 用户还没来得及重试或续传，历史就已经被破坏性改写。
+            // 现在改为在**构建请求时**由 ApiMessageSanitizer 统一净化，
+            // 磁盘上的历史保持原样，UI 也能如实展示发生过什么。
+            messages
         } catch (e: Exception) {
             AppLogger.e(TAG, "加载聊天记录失败: projectId=$projectId tabId=$tabId", e)
             val backupFile = File(file.parentFile, "${file.name}.bak")
@@ -91,38 +98,28 @@ class AiChatHistoryManager {
     }
 
     /**
-     * 移除悬空的 tool_calls（有 assistant tool_calls 但后续没有足够的 tool 响应）
+     * 解析消息携带的图片列表。
+     * 只保留格式合法的条目；图片文件丢失时仍保留引用（界面显示占位，发送时自动跳过）。
      */
-    private fun cleanupIncompleteToolCalls(messages: List<AiChatMessage>): List<AiChatMessage> {
-        val result = mutableListOf<AiChatMessage>()
-        for (msg in messages) {
-            if (msg.hasToolCalls()) {
-                val requiredIds = msg.toolCalls!!.map { it.id }.toSet()
-                // 统计后续 tool 消息中匹配的 tool_call_id
-                var matchedCount = 0
-                val checkFrom = messages.indexOf(msg) + 1
-                for (j in checkFrom until messages.size) {
-                    val next = messages[j]
-                    if (next.isTool() && next.toolCallId in requiredIds) matchedCount++
-                    if (next.isAssistant() || next.isUser()) break // 遇到新对话轮次停止检查
-                }
-                if (matchedCount < requiredIds.size) {
-                    // 不完整的 tool_calls，移除 tool_calls 字段但保留消息
-                    result.add(msg.copy(toolCalls = null))
-                    continue
-                }
-            }
-            result.add(msg)
+    private fun parseImages(arr: JSONArray?): List<ChatImage> {
+        if (arr == null || arr.length() == 0) return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val file = o.optString("file", "")
+            if (file.isEmpty()) return@mapNotNull null
+            ChatImage(
+                fileName = file,
+                mimeType = o.optString("mime", "image/png"),
+                sizeBytes = o.optLong("size", 0L),
+                detail = o.optString("detail", DeepSeekApi.DETAIL_AUTO)
+            )
         }
-        return result
     }
 
     fun saveChatHistory(projectId: String, tabId: Int, messages: List<AiChatMessage>) {
         try {
-            // 保存前清理不完整的 tool_calls 链
-            val cleaned = cleanupIncompleteToolCalls(messages)
             val array = JSONArray()
-            cleaned.forEach { msg ->
+            messages.forEach { msg ->
                 val obj = JSONObject().apply {
                     put("id", msg.id)
                     put("role", msg.role)
@@ -148,6 +145,22 @@ class AiChatHistoryManager {
                     if (msg.toolCallId != null) {
                         put("tool_call_id", msg.toolCallId)
                     }
+
+                    // 图片只存引用（文件本体在 ai_images/ 下，按内容哈希命名）
+                    if (msg.hasImages()) {
+                        put("images", JSONArray().apply {
+                            msg.images.forEach { img ->
+                                put(JSONObject().apply {
+                                    put("file", img.fileName)
+                                    put("mime", img.mimeType)
+                                    put("size", img.sizeBytes)
+                                    put("detail", img.detail)
+                                })
+                            }
+                        })
+                    }
+                    if (msg.localOnly) put("local_only", true)
+                    if (msg.isInjection) put("is_injection", true)
                 }
                 array.put(obj)
             }

@@ -1,4 +1,4 @@
-import java.io.FileInputStream
+﻿import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
@@ -30,8 +30,8 @@ android {
         applicationId = "cn.novelmaker.wg1337"
         minSdk = 24
         targetSdk = 36
-        versionCode = 120
-        versionName = "1.6.0"
+        versionCode = 121
+        versionName = "1.7.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

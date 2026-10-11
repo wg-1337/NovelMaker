@@ -1,7 +1,6 @@
 package cn.novelmaker.wg1337.utils
 
 import cn.novelmaker.wg1337.Platform
-import cn.novelmaker.wg1337.ui.ai.DefaultPrompt
 import java.io.File
 
 /**
@@ -12,16 +11,22 @@ import java.io.File
  * /存储根目录/NovelMaker/
  *     └── {项目名称}/
  *         ├── 大纲/          # 故事大纲相关文件
- *         ├── 提示词/        # AI提示词相关文件
  *         └── 小说主体/      # 小说章节正文文件
+ *
+ * 注：v1.7.0 起不再创建「提示词/」目录 —— 系统提示词改为在设置中直接管理
+ * （见 SystemPromptManager / ConversationSettingsManager），不必落盘为项目文件。
+ * 老项目里已存在的「提示词/」目录不会被删除，仍可正常浏览与编辑。
  */
 object ProjectStorageManager {
 
     /** NovelMaker 根目录名称 */
     private const val ROOT_DIR_NAME = "NovelMaker"
 
-    /** 子目录名称 */
-    val SUB_DIRS = listOf("大纲", "提示词", "小说主体")
+    /** 新建项目时创建的子目录 */
+    val SUB_DIRS = listOf("大纲", "小说主体")
+
+    /** 历史遗留子目录：不再创建，但老项目存在时仍需展示/可访问 */
+    const val LEGACY_PROMPT_DIR = "提示词"
 
     /**
      * 获取 NovelMaker 根目录路径
@@ -60,15 +65,10 @@ object ProjectStorageManager {
             }
             projectDir.mkdirs()
 
-            // 创建三个子目录
+            // 创建子目录
             SUB_DIRS.forEach { subDir ->
                 val dir = File(projectDir, subDir)
                 dir.mkdirs()
-            }
-            // 生成默认AI提示词文件
-            val promptFile = File(File(projectDir, "提示词"), "提示词.txt")
-            if (!promptFile.exists()) {
-                promptFile.writeText(DefaultPrompt.getDefaultPrompt())
             }
             true
         } catch (e: Exception) {

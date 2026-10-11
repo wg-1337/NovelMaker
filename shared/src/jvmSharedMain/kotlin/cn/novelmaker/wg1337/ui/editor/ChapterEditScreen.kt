@@ -43,6 +43,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cn.novelmaker.wg1337.ui.ai.AiChatUi
 import cn.novelmaker.wg1337.ui.ai.AiChatViewModel
+import cn.novelmaker.wg1337.ui.ai.ConversationInjectionDialog
+import cn.novelmaker.wg1337.ui.ai.ConversationSettingsManager
+import cn.novelmaker.wg1337.ui.ai.DeepSeekApi
 import cn.novelmaker.wg1337.ui.ai.FinalizedManager
 import cn.novelmaker.wg1337.ui.tutorial.EditorTutorialOverlay
 import cn.novelmaker.wg1337.ui.tutorial.TutorialStep
@@ -92,6 +95,7 @@ fun ChapterEditScreen(
     var showFileMenu by remember { mutableStateOf<File?>(null) }
     var showUnmarkConfirm by remember { mutableStateOf<Pair<File, String>?>(null) }
     var showQuickSettings by remember { mutableStateOf(false) }
+    var showInjectionDialog by remember { mutableStateOf(false) }
 
     // ── 新手教程（编辑器部分） ──
     val editorPrefsManager = remember { PreferencesManager() }
@@ -117,37 +121,38 @@ fun ChapterEditScreen(
     val editorTutorialSteps = remember {
         listOf(
             TutorialStep(
-                title = "📁 文件管理",
-                description = "点击顶部工具栏的 ☰ 图标，打开文件树侧边栏。" +
+                title = "文件管理",
+                description = "点击顶部工具栏的菜单图标，打开文件树侧边栏。" +
                         "\n\n在这里可以：\n" +
                         "• 浏览项目的目录结构\n" +
                         "• 新建/重命名/删除文件和文件夹\n" +
-                        "• 标记定稿章节（📑 图标），优化 AI 对话效率"
+                        "• 标记定稿章节（书签图标），优化 AI 对话效率"
             ),
             TutorialStep(
-                title = "↩️ 撤销与重做",
-                description = "工具栏的 ↩ 和 ↪ 按钮支持撤销和重做操作。" +
+                title = "撤销与重做",
+                description = "工具栏的撤销和重做按钮支持回退与恢复操作。" +
                         "\n\n最多可回溯 30 步编辑历史，写错了随时回退。"
             ),
             TutorialStep(
-                title = "🤖 AI 写作助手",
-                description = "点击 ✨ 按钮打开 AI 助手面板。" +
+                title = "AI 写作助手",
+                description = "点击星标按钮打开 AI 助手面板。" +
                         "\n\n• Plan 模式：AI 帮你规划大纲和情节\n" +
                         "• Agent 模式：AI 直接撰写章节正文\n" +
                         "• 多对话标签页：最多 5 个独立对话，互不干扰\n" +
+                        "• 图片输入：可发送截图、参考图，让 AI 看图写作\n" +
                         "• 联网搜索：AI 可搜索网络资料、查阅范文，还能打开网页\n" +
                         "• 长按 AI 回复可修改或删除，工具调用默认折叠\n" +
-                        "• AI 还能读取和修改你的项目文件"
+                        "• 注入设置：可自定义上下文与系统提示词"
             ),
             TutorialStep(
-                title = "💾 保存与设置",
+                title = "保存与设置",
                 description = "工具栏右侧还有两个实用按钮：\n\n" +
-                        "• 💾 保存：手动保存当前编辑内容\n" +
-                        "• ⚙️ 快捷设置：快速调整字体大小和行间距\n\n" +
-                        "提示：系统也支持自动保存，可以在设置中开启。"
+                        "• 保存：手动保存当前编辑内容\n" +
+                        "• 快捷设置：快速调整字体大小、行间距、思考强度与注入设置\n\n" +
+                        "提示：系统也支持自动保存。"
             ),
             TutorialStep(
-                title = "✍️ 开始写作",
+                title = "开始写作",
                 description = "在最中央的编辑区域直接输入文字，开始你的创作。" +
                         "\n\n编辑器特点：\n" +
                         "• 左侧显示行号，方便定位\n" +
@@ -488,21 +493,75 @@ fun ChapterEditScreen(
                 Spacer(Modifier.height(16.dp))
 
                 // 思考强度（全局设置，与软件设置同步）
-                var reasoningEffort by remember { mutableStateOf(editorPrefsManager.aiReasoningEffort ?: "high") }
+                var reasoningEffort by remember {
+                    mutableStateOf(DeepSeekApi.normalizeEffort(editorPrefsManager.aiReasoningEffort))
+                }
                 Text("思考强度", style = MaterialTheme.typography.bodyLarge)
-                Text("AI 回复前的深度思考级别，全局生效", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "AI 回复前的深度思考级别，全局生效",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("off" to "不思考", "high" to "高", "max" to "最大").forEach { (value, label) ->
+                    DeepSeekApi.EFFORT_OPTIONS.forEach { (value, label) ->
                         FilterChip(
                             selected = reasoningEffort == value,
-                            onClick = { reasoningEffort = value; editorPrefsManager.aiReasoningEffort = value },
+                            onClick = {
+                                reasoningEffort = value
+                                editorPrefsManager.aiReasoningEffort = value
+                            },
                             label = { Text(label) }
                         )
                     }
                 }
+
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(12.dp))
+
+                // 上下文 / 系统提示词注入（工作区 + 当前对话，按字段继承）
+                val effective by aiViewModel.effectiveSettings.collectAsState()
+                Text("上下文与提示词注入", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    buildString {
+                        val parts = mutableListOf<String>()
+                        if (effective.systemPrompt.isUsable) parts.add("系统提示词注入已启用")
+                        if (effective.context.isUsable) {
+                            parts.add("每 ${effective.context.everyNSteps} 步注入上下文")
+                        }
+                        if (parts.isEmpty()) parts.add("未启用")
+                        append(parts.joinToString("，"))
+                        append(" · ")
+                        append(
+                            if (effective.hasConversationOverride) {
+                                "本对话有单独设置"
+                            } else {
+                                "全部继承工作区"
+                            }
+                        )
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        showQuickSettings = false
+                        showInjectionDialog = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("配置注入设置") }
             }
         }
+    }
+
+    // ── 注入设置对话框（快捷设置入口） ──
+    if (showInjectionDialog) {
+        ConversationInjectionDialog(
+            viewModel = aiViewModel,
+            onDismiss = { showInjectionDialog = false }
+        )
     }
 
     // ── 编辑器新手教程遮罩 ──

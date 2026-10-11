@@ -1,4 +1,4 @@
-package cn.novelmaker.wg1337
+﻿package cn.novelmaker.wg1337
 
 import cn.novelmaker.wg1337.utils.UpdateChecker.ReleaseInfo
 import com.sun.jna.platform.win32.Crypt32Util
@@ -66,7 +66,7 @@ private class DesktopPlatformServices : PlatformServices {
         // 桌面端主题直接由 Compose 依据偏好渲染，无需额外系统调用
     }
 
-    override fun currentVersionName(): String = "1.6.0"
+    override fun currentVersionName(): String = "1.7.0"
 
     override fun installUpdate(info: ReleaseInfo, onProgress: (Int) -> Unit): Boolean {
         if (info.downloadUrl.isEmpty()) return false

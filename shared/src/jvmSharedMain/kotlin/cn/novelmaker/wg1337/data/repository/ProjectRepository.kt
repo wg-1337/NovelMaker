@@ -2,6 +2,8 @@ package cn.novelmaker.wg1337.data.repository
 
 import cn.novelmaker.wg1337.Platform
 import cn.novelmaker.wg1337.data.model.Project
+import cn.novelmaker.wg1337.ui.ai.AiChatViewModel
+import cn.novelmaker.wg1337.ui.ai.ChatImageStore
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -57,12 +59,24 @@ class ProjectRepository {
             projectDir.deleteRecursively()
         }
 
-        // 清理 AI 相关数据
+        // 清理 AI 相关数据（聊天记录、系统提示词、定稿列表、Token 统计、注入设置）
         val aiDir = File(Platform.internalDataDir(), "ai_chats")
         if (aiDir.exists()) {
             aiDir.listFiles()?.forEach { file ->
                 if (file.name.contains(projectId)) file.delete()
             }
+        }
+
+        // 清理对话图片目录
+        ChatImageStore.deleteProjectImages(projectId)
+
+        // 清理偏好项里的项目级数据（无法按项目一次性枚举，这里清理已知的键）
+        val prefs = Platform.keyValueStore()
+        prefs.remove("ai_mode_$projectId")
+        prefs.remove("ai_active_tab_$projectId")
+        // 每个对话一个步数计数器，最多 5 个标签页
+        for (tabId in 1..AiChatViewModel.MAX_TABS) {
+            prefs.remove("injection_steps_${projectId}_$tabId")
         }
     }
 

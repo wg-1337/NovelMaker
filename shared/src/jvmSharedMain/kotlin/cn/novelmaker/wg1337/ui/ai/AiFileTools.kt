@@ -1,5 +1,6 @@
 package cn.novelmaker.wg1337.ui.ai
 
+import cn.novelmaker.wg1337.AppLogger
 import cn.novelmaker.wg1337.utils.ProjectStorageManager
 import org.json.JSONArray
 import org.json.JSONObject
@@ -23,6 +24,40 @@ class AiFileTools(
 
     private val projectDir = ProjectStorageManager.getProjectDir(projectName)
 
+    /**
+     * 工具可访问的子目录。
+     * 「提示词」是历史遗留目录：新项目不再创建，但老项目里可能仍存在，保留可读写能力。
+     */
+    private val writableSubDirs: JSONArray
+        get() = JSONArray().apply {
+            put("大纲")
+            put("小说主体")
+            if (File(projectDir, ProjectStorageManager.LEGACY_PROMPT_DIR).exists()) {
+                put(ProjectStorageManager.LEGACY_PROMPT_DIR)
+            }
+        }
+
+    private val subDirDescription: String
+        get() = buildString {
+            append("子目录名，可选值：大纲/小说主体")
+            if (File(projectDir, ProjectStorageManager.LEGACY_PROMPT_DIR).exists()) {
+                append("（本项目另有历史遗留的 提示词 目录）")
+            }
+        }
+
+    /** 构建 subDir 参数定义（多个工具的 schema 共用） */
+    private fun subDirParam(): JSONObject = JSONObject().apply {
+        put("type", "string")
+        put("description", subDirDescription)
+        put("enum", writableSubDirs)
+    }
+
+    /** 构建 fileName 参数定义 */
+    private fun fileNameParam(description: String): JSONObject = JSONObject().apply {
+        put("type", "string")
+        put("description", description)
+    }
+
     // ───────────────────── 工具定义（Function Calling Schema） ─────────────────────
 
     /**
@@ -40,13 +75,7 @@ class AiFileTools(
                 put("parameters", JSONObject().apply {
                     put("type", "object")
                     put("properties", JSONObject().apply {
-                        put("subDir", JSONObject().apply {
-                            put("type", "string")
-                            put("description", "子目录名，可选值：大纲/提示词/小说主体")
-                            put("enum", JSONArray().apply {
-                                put("大纲"); put("提示词"); put("小说主体")
-                            })
-                        })
+                        put("subDir", subDirParam())
                     })
                     put("required", JSONArray().put("subDir"))
                     put("additionalProperties", false)
@@ -63,17 +92,8 @@ class AiFileTools(
                 put("parameters", JSONObject().apply {
                     put("type", "object")
                     put("properties", JSONObject().apply {
-                        put("subDir", JSONObject().apply {
-                            put("type", "string")
-                            put("description", "子目录名")
-                            put("enum", JSONArray().apply {
-                                put("大纲"); put("提示词"); put("小说主体")
-                            })
-                        })
-                        put("fileName", JSONObject().apply {
-                            put("type", "string")
-                            put("description", "文件名，含扩展名，如：第1章_初入异世.txt")
-                        })
+                        put("subDir", subDirParam())
+                        put("fileName", fileNameParam("文件名，含扩展名，如：第1章_初入异世.txt"))
                     })
                     put("required", JSONArray().apply {
                         put("subDir"); put("fileName")
@@ -92,17 +112,8 @@ class AiFileTools(
                 put("parameters", JSONObject().apply {
                     put("type", "object")
                     put("properties", JSONObject().apply {
-                        put("subDir", JSONObject().apply {
-                            put("type", "string")
-                            put("description", "子目录名")
-                            put("enum", JSONArray().apply {
-                                put("大纲"); put("提示词"); put("小说主体")
-                            })
-                        })
-                        put("fileName", JSONObject().apply {
-                            put("type", "string")
-                            put("description", "文件名，含扩展名")
-                        })
+                        put("subDir", subDirParam())
+                        put("fileName", fileNameParam("文件名，含扩展名"))
                         put("content", JSONObject().apply {
                             put("type", "string")
                             put("description", "文件内容")
@@ -125,17 +136,8 @@ class AiFileTools(
                 put("parameters", JSONObject().apply {
                     put("type", "object")
                     put("properties", JSONObject().apply {
-                        put("subDir", JSONObject().apply {
-                            put("type", "string")
-                            put("description", "子目录名")
-                            put("enum", JSONArray().apply {
-                                put("大纲"); put("提示词"); put("小说主体")
-                            })
-                        })
-                        put("fileName", JSONObject().apply {
-                            put("type", "string")
-                            put("description", "文件名，含扩展名")
-                        })
+                        put("subDir", subDirParam())
+                        put("fileName", fileNameParam("文件名，含扩展名"))
                     })
                     put("required", JSONArray().apply {
                         put("subDir"); put("fileName")
@@ -270,7 +272,7 @@ class AiFileTools(
                 "writeFile" -> {
                     val subDir = args?.optString("subDir", "") ?: ""
                     if (mode == AiChatViewModel.AiMode.PLAN && subDir == "小说主体") {
-                        "⚠️ Plan 模式下不能写入小说主体。请先完成计划，切换到 Agent 模式后再开始写作。"
+                        "Plan 模式下不能写入小说主体。请先完成计划，切换到 Agent 模式后再开始写作。"
                     } else {
                         val fileName = args?.optString("fileName", "") ?: ""
                         val content = args?.optString("content", "") ?: ""
@@ -282,7 +284,7 @@ class AiFileTools(
                     val subDir = args?.optString("subDir", "") ?: ""
                     val fileName = args?.optString("fileName", "") ?: ""
                     if (subDir.isEmpty() || fileName.isEmpty()) "请指定子目录和文件名"
-                    else if (mode == AiChatViewModel.AiMode.PLAN && subDir == "小说主体") "⚠️ Plan 模式下不能删除小说主体文件。请先完成计划，切换到 Agent 模式后再操作。"
+                    else if (mode == AiChatViewModel.AiMode.PLAN && subDir == "小说主体") "Plan 模式下不能删除小说主体文件。请先完成计划，切换到 Agent 模式后再操作。"
                     else deleteFile(subDir, fileName)
                 }
                 "getProjectStructure" -> getProjectStructure()
@@ -306,7 +308,7 @@ class AiFileTools(
                 else -> "未知工具: $toolName"
             }
         } catch (e: Exception) {
-            "❌ 工具调用错误: ${e.message}"
+            "工具调用错误: ${e.message}"
         }
     }
 
@@ -316,7 +318,7 @@ class AiFileTools(
      * 列出项目子目录下的文件
      */
     fun listFiles(subDir: String): String {
-        val dir = File(projectDir, subDir)
+        val dir = resolveInsideProject(subDir) ?: return "目录名不合法：$subDir"
         if (!dir.exists()) return "目录「$subDir」不存在"
         val files = dir.listFiles()
         if (files == null) return "无法读取目录「$subDir」（I/O错误或权限不足）"
@@ -325,10 +327,10 @@ class AiFileTools(
         val result = StringBuilder("【$subDir】目录下的文件：\n")
         files.sortedBy { it.name }.forEachIndexed { index, file ->
             if (file.isDirectory) {
-                result.appendLine("  ${index + 1}. 📁 ${file.name}/")
+                result.appendLine("  ${index + 1}. [目录] ${file.name}/")
             } else {
                 val size = if (file.length() > 1024) "${file.length() / 1024}KB" else "${file.length()}B"
-                result.appendLine("  ${index + 1}. 📄 ${file.name} ($size)")
+                result.appendLine("  ${index + 1}. ${file.name} ($size)")
             }
         }
         return result.toString()
@@ -338,10 +340,9 @@ class AiFileTools(
      * 读取项目中的文件内容
      */
     fun readFile(subDir: String, fileName: String): String {
-        val safeDir = sanitizeFileName(subDir)
-        val safeName = sanitizeFileName(fileName)
-        val file = File(File(projectDir, safeDir), safeName)
+        val file = resolveInsideProject(subDir, fileName) ?: return "路径不合法：$subDir/$fileName"
         if (!file.exists()) return "文件不存在：$subDir/$fileName"
+        if (file.isDirectory) return "「$fileName」是目录，不是文件"
         if (file.length() > MAX_READ_SIZE) return "文件过大（超过${MAX_READ_SIZE / 1024 / 1024}MB），拒绝读取"
         return try {
             file.readText()
@@ -356,17 +357,14 @@ class AiFileTools(
     fun writeFile(subDir: String, fileName: String, content: String): String {
         if (content.length > MAX_WRITE_SIZE) return "内容过大（超过${MAX_WRITE_SIZE / 1024 / 1024}MB），拒绝写入"
         return try {
-            val safeDir = sanitizeFileName(subDir)
-            val dir = File(projectDir, safeDir)
-            if (!dir.exists()) dir.mkdirs()
-            // 确保文件名合法
-            val safeName = sanitizeFileName(fileName)
-            val safeFile = File(dir, safeName)
+            val safeFile = resolveInsideProject(subDir, fileName)
+                ?: return "路径不合法：$subDir/$fileName"
+            safeFile.parentFile?.mkdirs()
             safeFile.writeText(content)
             onFileChanged?.invoke()
-            "✅ 文件已创建/更新：$subDir/$safeName（${content.length}字符）"
+            "文件已创建/更新：$subDir/${safeFile.name}（${content.length} 字符）"
         } catch (e: Exception) {
-            "❌ 写入文件失败：${e.message}"
+            "写入文件失败：${e.message}"
         }
     }
 
@@ -375,33 +373,44 @@ class AiFileTools(
      */
     fun deleteFile(subDir: String, fileName: String): String {
         return try {
-            val file = File(File(projectDir, subDir), fileName)
+            val file = resolveInsideProject(subDir, fileName)
+                ?: return "路径不合法：$subDir/$fileName"
             if (!file.exists()) return "文件不存在：$subDir/$fileName"
+            if (file.isDirectory) return "不能通过该工具删除目录：$subDir/$fileName"
             if (file.delete()) {
                 onFileChanged?.invoke()
-                "✅ 文件已删除：$subDir/$fileName"
-            } else "❌ 删除失败"
+                "文件已删除：$subDir/$fileName"
+            } else "删除失败"
         } catch (e: Exception) {
-            "❌ 删除文件失败：${e.message}"
+            "删除文件失败：${e.message}"
         }
     }
 
     /**
-     * 获取项目目录结构概览
+     * 获取项目目录结构概览。
+     * 列出项目下实际存在的目录（含历史遗留目录与用户自建目录），而不是只列固定的几个。
      */
     fun getProjectStructure(): String {
         if (!projectDir.exists()) return "项目目录不存在"
-        val sb = StringBuilder("📁 项目目录结构：\n")
+        val sb = StringBuilder("项目目录结构：\n")
         sb.appendLine("  ${projectDir.name}/")
-        for (subDir in ProjectStorageManager.SUB_DIRS) {
-            val dir = File(projectDir, subDir)
-            if (dir.exists()) {
-                val files = dir.listFiles() ?: emptyArray()
-                sb.appendLine("    ├── $subDir/ (${files.size}个文件)")
-            } else {
-                sb.appendLine("    ├── $subDir/ (目录不存在)")
+        val dirs = projectDir.listFiles()
+            ?.filter { it.isDirectory }
+            ?.sortedBy { it.name }
+            ?: emptyList()
+        if (dirs.isEmpty()) {
+            sb.appendLine("    （暂无子目录）")
+        } else {
+            dirs.forEach { dir ->
+                val entries: Array<File> = dir.listFiles() ?: emptyArray()
+                val fileCount = entries.count { it.isFile }
+                val subDirCount = entries.count { it.isDirectory }
+                val extra = if (subDirCount > 0) "，$subDirCount 个子目录" else ""
+                sb.appendLine("    ├── ${dir.name}/ ($fileCount 个文件$extra)")
             }
         }
+        val rootFiles = projectDir.listFiles()?.count { it.isFile } ?: 0
+        if (rootFiles > 0) sb.appendLine("    （根目录另有 $rootFiles 个文件）")
         return sb.toString()
     }
 
@@ -409,14 +418,15 @@ class AiFileTools(
      * AI 标记章节为定稿（纳入缓存前缀）
      */
     private fun markFinalized(fileName: String): String {
-        val file = File(File(projectDir, "小说主体"), fileName)
-        if (!file.exists()) return "❌ 文件不存在：小说主体/$fileName"
-        if (file.isDirectory) return "❌ 不能标记文件夹，只能标记 .txt 章节文件"
+        val file = resolveInsideProject("小说主体", fileName)
+            ?: return "路径不合法：小说主体/$fileName"
+        if (!file.exists()) return "文件不存在：小说主体/$fileName"
+        if (file.isDirectory) return "不能标记文件夹，只能标记 .txt 章节文件"
         val finalizedManager = FinalizedManager()
-        val relPath = "小说主体/$fileName"
+        val relPath = "小说主体/${file.name}"
         finalizedManager.markFinalized(projectId, relPath)
         onFileChanged?.invoke()
-        return "✅ 已将「$fileName」标记为定稿。"
+        return "已将「${file.name}」标记为定稿。"
     }
 
     private fun listFinalized(): String {
@@ -426,11 +436,38 @@ class AiFileTools(
         return "【已定稿章节】\n" + files.sorted().joinToString("\n") { "  · $it" }
     }
 
+    /**
+     * 清理文件名/目录名中的非法字符与路径穿越片段。
+     */
     private fun sanitizeFileName(name: String): String {
         return name.replace(Regex("[\\\\/:*?\"<>|]"), "_")
             .replace("..", "_")
             .trim()
             .ifEmpty { "unnamed" }
+    }
+
+    /**
+     * 解析项目内的目标文件，并校验结果确实落在项目目录内。
+     *
+     * 所有工具入口（含只读的 listFiles / readFile）都走这里：
+     * 模型给出的 subDir / fileName 属于**不可信输入**，必须统一清洗，
+     * 否则 `../../` 之类的参数可以读写项目目录之外的文件。
+     *
+     * @return 校验通过的文件；越界返回 null
+     */
+    private fun resolveInsideProject(subDir: String, fileName: String? = null): File? {
+        val safeDir = sanitizeFileName(subDir)
+        val dir = File(projectDir, safeDir)
+        val target = if (fileName.isNullOrEmpty()) dir else File(dir, sanitizeFileName(fileName))
+        return try {
+            val root = projectDir.canonicalFile
+            val resolved = target.canonicalFile
+            val rootPath = root.path + File.separator
+            if (resolved.path == root.path || resolved.path.startsWith(rootPath)) resolved else null
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "路径校验失败: $subDir/$fileName - ${e.message}")
+            null
+        }
     }
 
     // ───────────────────── 联网搜索 ─────────────────────
@@ -450,7 +487,7 @@ class AiFileTools(
             val html = httpGet(urlStr, SEARCH_TIMEOUT_MS, MAX_SEARCH_HTML)
             parseSearchResults(html, useGoogle, query)
         } catch (e: Exception) {
-            "❌ 搜索失败：${e.message}"
+            "搜索失败：${e.message}"
         }
     }
 
@@ -462,18 +499,18 @@ class AiFileTools(
     fun fetchUrl(url: String): String {
         val trimmed = url.trim()
         if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-            return "❌ 仅支持 http/https 网址：$trimmed"
+            return "仅支持 http/https 网址：$trimmed"
         }
         return try {
             val raw = httpGet(trimmed, FETCH_TIMEOUT_MS, MAX_FETCH_HTML + 1)
             val text = if (fetchPlainText) htmlToText(raw) else raw
             if (text.length > MAX_FETCH_HTML) {
-                "⚠️ 内容较大，已截断到前 ${MAX_FETCH_HTML / 1024 / 1024}MB：\n" + text.take(MAX_FETCH_HTML)
+                "内容较大，已截断到前 ${MAX_FETCH_HTML / 1024 / 1024}MB：\n" + text.take(MAX_FETCH_HTML)
             } else {
                 text
             }
         } catch (e: Exception) {
-            "❌ 打开页面失败：${e.message}"
+            "打开页面失败：${e.message}"
         }
     }
 
@@ -588,6 +625,7 @@ class AiFileTools(
     }
 
     companion object {
+        private const val TAG = "AiFileTools"
         private const val MAX_READ_SIZE = 1024 * 1024L
         private const val MAX_WRITE_SIZE = 5 * 1024 * 1024L
         private const val MAX_SEARCH_HTML = 5 * 1024 * 1024  // 搜索结果页最多读取 5MB

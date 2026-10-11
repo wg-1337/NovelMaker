@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">novelmaker</string>
     <string name="app_name_display">NOVELMAKER</string>
@@ -78,8 +78,8 @@
     <string name="create_project_name_placeholder">我的小说</string>
     <string name="create_project_cancel">取消</string>
     <string name="create_project_confirm">创建</string>
-    <string name="create_project_structure_title">📁 即将创建的目录结构</string>
-    <string name="create_project_dir_preview">/storage/emulated/0/NovelMaker/\n    └── 我的小说/\n        ├── 大纲/\n        ├── 提示词/\n        └── 小说主体/</string>
+    <string name="create_project_structure_title">即将创建的目录结构</string>
+    <string name="create_project_dir_preview">NovelMaker/\n    └── 我的小说/\n        ├── 大纲/\n        └── 小说主体/</string>
     <string name="create_project_success">项目「%s」创建成功</string>
     <string name="create_project_error_empty">请输入小说名称</string>
     <string name="create_project_error_length">小说名称长度应在1-50个字符之间</string>
@@ -113,7 +113,7 @@
     <!-- Settings -->
     <string name="settings_title">设置</string>
     <string name="settings_about">关于</string>
-    <string name="settings_version">版本 1.6.0</string>
+    <string name="settings_version">版本 1.7.0</string>
     <string name="settings_opensource">开源软件</string>
     <string name="settings_editor_title">编辑器设置</string>
     <string name="settings_font_size">字体大小</string>

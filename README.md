@@ -1,4 +1,4 @@
-# NovelMaker
+﻿# NovelMaker
 
 > 轻量级跨平台小说创作工具（Android / Windows） — 本地存储 + DeepSeek AI 辅助写作
 
@@ -6,7 +6,7 @@
 ![Min SDK](https://img.shields.io/badge/Min%20SDK-24-blue)
 ![Language](https://img.shields.io/badge/Language-Kotlin-purple)
 ![UI](https://img.shields.io/badge/UI-Jetpack%20Compose-blueviolet)
-![Version](https://img.shields.io/badge/Version-1.6.0-orange)
+![Version](https://img.shields.io/badge/Version-1.7.0-orange)
 
 ---
 
@@ -35,16 +35,21 @@ NovelMaker 是一款运行在 Android 设备上的小说写作应用。它将专
 ### 🤖 AI 写作助手（DeepSeek）
 - **Plan 模式**：AI 辅助构思大纲、角色设定、章节规划，支持方向选择
 - **Agent 模式**：AI 直接撰写章节正文
+- **图片输入**：可发送截图、参考图，让 AI 看图理解需求（需 `deepseek-flash` 模型）
+- **上下文注入**：可设置每 N 步自动注入预设内容到上下文末尾，防止长对话中关键设定被挤出
+- **系统提示词注入**：基础系统提示词随时可改，并可追加自定义提示词，工作区/单对话两级生效
+- **引用文件**：可勾选项目文件把内容读入系统提示词，文件改了提示词自动跟随
+- **提示词可见化**：设置中可查看**真正发给模型**的分层提示词，并标注每段来源与是否进缓存
 - **多对话标签页**：每个项目最多 5 个独立对话，各对话记录独立保存、互不干扰
 - **联网搜索**：AI 内置 webSearch 工具，可联网搜索（优先 Bing、Google 备选），遇到不了解的信息或没见过的文体时自动搜索
 - **AI 回复编辑**：长按 AI 回复可修改内容或删除该条
 - **对话 Markdown 渲染**：AI 输出支持 Markdown（标题/粗体/代码/列表/引用等），编辑时仍为纯文本
-- **工具调用折叠**：AI 的读取/写入/搜索等工具调用与结果默认折叠展示
+- **工具调用折叠**：AI 的读取/写入/搜索等工具调用与结果默认折叠展示，一次回复的多轮工具调用合并展示
 - **定稿主动引导**：章节较多后 AI 主动建议标记定稿，并说明缓存命中、风格一致等好处
-- **思考强度可调**：不思考 / 高 / 最大三档全局切换，工具调用轮次可自定义
+- **思考强度可调**：不思考 / 低 / 高 / 最大四档全局切换，工具调用轮次可自定义
 - 流式对话，逐字显示回复
-- Function Calling：AI 可读写项目文件、联网搜索
-- Token 用量统计（系统提示词 / 对话 / 工具调用）
+- Function Calling：AI 可读写项目文件、联网搜索、打开网页
+- Token 用量统计（系统提示词 / 对话 / 工具调用），并展示服务端真实缓存命中率
 - 缓存命中优化（KV-Cache，仅固定前缀标记缓存）
 
 ### 🎨 界面
@@ -82,10 +87,10 @@ NovelMaker 为首次使用的用户提供了内置的**步骤引导教程**，�
 **编辑器教程（5步）**
 | 步骤 | 内容 |
 |------|------|
-| Step 1 | 文件树 — 介绍侧边栏文件管理、新建/重命名/删除、标记定稿 |
+| Step 1 | 文件管理 — 文件树、新建/重命名/删除、标记定稿 |
 | Step 2 | 撤销与重做 — 30 步编辑历史回退 |
-| Step 3 | AI 助手 — 引导使用 DeepSeek AI 写作辅助（Plan/Agent 模式） |
-| Step 4 | 保存与设置 — 手动保存、快捷设置、自动保存说明 |
+| Step 3 | AI 写作助手 — Plan/Agent 模式、图片输入、联网搜索、注入设置 |
+| Step 4 | 保存与设置 — 快捷设置（字体、行间距、思考强度、注入设置） |
 | Step 5 | 开始写作 — 行号、双指缩放、字数统计 |
 
 ### 跳过早关闭
@@ -121,15 +126,19 @@ NovelMaker 为首次使用的用户提供了内置的**步骤引导教程**，�
 | 设置项 | 说明 |
 |--------|------|
 | API 地址 | DeepSeek API 端点地址（默认 `https://api.deepseek.com`）|
-| 模型名称 | 使用的 AI 模型（默认 `deepseek-chat`）|
+| 模型名称 | 使用的 AI 模型（`deepseek-flash` 支持图像理解；`deepseek-v4-pro` 推理更强但不支持图片）|
 | API Key | 你的 DeepSeek API 密钥 |
 | 流式回答 | 逐字显示 AI 回复内容（推荐开启）|
-| 思考强度 | 不思考 / 高 / 最大 三档，全局生效 |
+| 思考强度 | 不思考 / 低 / 高 / 最大 四档，全局生效 |
 | 工具调用轮次 | AI 一轮对话调用工具的最大次数（-1 = 无限制，默认 5）|
 | 页面纯文本模式 | AI 打开网页时提取正文纯文本（默认开启），关闭则返回原始 HTML |
+| 上下文注入 | 每 N 步模型操作后自动注入预设内容到上下文末尾（全局默认值，可被项目/对话覆盖）|
+| 系统提示词注入 | 追加自定义系统提示词，随时可改、立即生效 |
 | 聊天记录管理 | 按项目展开查看全部对话（最多 5 个）及消息数，可逐个对话删除或整项目删除 |
-| Token 用量统计 | 查看各项目的 Token 消耗（含系统提示词/对话/工具调用分段统计）|
-| 系统提示词 | 浏览当前项目的系统提示词内容（只读）|
+| Token 用量统计 | 查看各项目的 Token 消耗（含缓存命中率）|
+| 系统提示词 | 按项目查看并**修改**系统提示词 |
+
+> 上下文注入与系统提示词注入可在**编辑器 → 快捷设置 → 上下文与提示词注入**中按「工作区 / 当前对话」两级单独配置，单对话设置可随时恢复为继承工作区。
 
 ### 💾 备份与恢复
 | 功能 | 说明 |
@@ -192,8 +201,11 @@ NovelMaker 为首次使用的用户提供了内置的**步骤引导教程**，�
 1. 获取 [DeepSeek API Key](https://platform.deepseek.com/)
 2. 打开应用 → 设置 → AI 写作设置
 3. 填入 API 地址（默认 `https://api.deepseek.com`）
-4. 填入模型名称（如 `deepseek-chat`）
+4. 填入模型名称（推荐 `deepseek-flash`；需要看图必须用这个）
 5. 填入 API Key
+
+可选：在「上下文注入与提示词注入」中设置全局默认的注入内容与间隔，
+再在编辑器右上角的「注入设置」里为单个项目/对话做覆盖。
 
 ---
 
@@ -207,13 +219,30 @@ novelmaker/
 │       ├── jvmSharedMain/               # Android/Windows 共享实现
 │       │   ├── data/                    # 模型与仓库
 │       │   ├── ui/                      # 全部 Compose 界面
+│       │   │   └── ai/                  # AI 客户端、消息净化器、注入设置、图片存储
 │       │   └── utils/                   # 备份/存储/更新
-│       ├── androidMain/                 # Keystore/权限/文件选择
-│       └── desktopMain/                 # DPAPI/FileDialog/安装器
+│       ├── androidMain/                 # Keystore/权限/文件选择/图片选择
+│       └── desktopMain/                 # DPAPI/FileDialog/安装器/图片选择
 ├── androidApp/                          # Android 入口（APK）
 ├── desktopApp/                          # Windows 入口（EXE/MSI）
+├── packaging/
+│   ├── windows/installer.iss            # Inno Setup 安装脚本
+│   └── icons/generate_icons.py          # 双端图标母版生成脚本
 └── gradle/                              # 构建配置
 ```
+
+### 🎨 图标一致性
+
+双端图标由**同一母版脚本**生成，几何与配色完全一致：
+
+```bash
+python packaging/icons/generate_icons.py
+```
+
+- **Windows**：`novelmaker.png`（窗口图标）、`novelmaker.ico`（7 种尺寸：16/24/32/48/64/128/256）
+- **Android**：自适应图标分层（背景/前景/单色，5 种密度）+ API 24–25 的传统图标
+
+修改图标时只需改脚本里的几何常量并重新运行，无需手工维护多份资源。
 
 ---
 
@@ -222,6 +251,7 @@ novelmaker/
 - 本软件仅供个人学习和创作使用
 - AI 生成内容的质量取决于模型和提示词，请自行审阅
 - AI 目前仅支持 OpenAI 格式的 DeepSeek，若使用中转站或其他模型，缓存命中率为 0 与软件无关
+- 图像理解仅 `deepseek-flash` 支持；`deepseek-v4-pro` 不支持图片输入
 - 请妥善保管 API Key，避免泄露
 - 本地数据请定期备份，卸载应用会导致数据丢失
 

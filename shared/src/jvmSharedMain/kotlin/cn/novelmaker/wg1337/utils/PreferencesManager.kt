@@ -2,16 +2,16 @@ package cn.novelmaker.wg1337.utils
 
 import cn.novelmaker.wg1337.AppLogger
 import cn.novelmaker.wg1337.Platform
+import cn.novelmaker.wg1337.ui.ai.ApiProfileManager
+import cn.novelmaker.wg1337.ui.ai.ConversationSettingsManager
+import cn.novelmaker.wg1337.ui.ai.DeepSeekApi
 
 class PreferencesManager {
     private val prefs = Platform.keyValueStore()
-    private val secureSecretStore = Platform.secureSecretStore()
 
     companion object {
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
         private const val KEY_THEME_MODE = "theme_mode"
-        private const val KEY_AI_API_KEY_ENCRYPTED = "ai_api_key_encrypted"
-        private const val KEY_AI_API_KEY_LEGACY = "ai_api_key"
 
         const val THEME_DYNAMIC = 0
         const val THEME_LIGHT = 1
@@ -47,65 +47,44 @@ class PreferencesManager {
         get() = prefs.getBoolean("editor_auto_save", true)
         set(value) = prefs.putBoolean("editor_auto_save", value)
 
-    // AI 设置
+    // ── AI 设置：统一走「当前启用的 API 配置」 ──
+    //
+    // 多 API 配置由 ApiProfileManager 管理；这里的读写都代理到启用项，
+    // 使调用方（AiApiClient、UI 等）无需关心多配置的存在。
+    // 旧版单配置会在 ApiProfileManager 首次读取时自动迁移。
+
     var aiBaseUrl: String?
-        get() = prefs.getString("ai_base_url", "https://api.deepseek.com")
-        set(value) = prefs.putString("ai_base_url", value)
+        get() = ApiProfileManager.getActiveOrDefault().baseUrl
+        set(value) {
+            val p = ApiProfileManager.getActiveOrDefault()
+            ApiProfileManager.upsert(p.copy(baseUrl = value ?: DeepSeekApi.DEFAULT_BASE_URL))
+        }
 
     var aiModel: String?
-        get() = prefs.getString("ai_model", "deepseek-chat")
-        set(value) = prefs.putString("ai_model", value)
+        get() = ApiProfileManager.getActiveOrDefault().model
+        set(value) {
+            val p = ApiProfileManager.getActiveOrDefault()
+            ApiProfileManager.upsert(
+                p.copy(model = DeepSeekApi.normalizeModel(value ?: DeepSeekApi.MODEL_FLASH))
+            )
+        }
 
     var aiApiKey: String?
-        get() = readApiKey()
+        get() = ApiProfileManager.getActiveOrDefault().apiKey.ifEmpty { null }
         set(value) {
-            prefs.remove(KEY_AI_API_KEY_LEGACY)
-            if (value.isNullOrEmpty()) {
-                prefs.remove(KEY_AI_API_KEY_ENCRYPTED)
-            } else {
-                val encrypted = try {
-                    secureSecretStore.encrypt(value)
-                } catch (e: Exception) {
-                    AppLogger.e("PreferencesManager", "加密 API Key 失败", e)
-                    null
-                }
-                if (encrypted != null) {
-                    prefs.putString(KEY_AI_API_KEY_ENCRYPTED, encrypted)
-                }
-            }
+            val p = ApiProfileManager.getActiveOrDefault()
+            ApiProfileManager.upsert(p.copy(apiKey = value.orEmpty()))
         }
-
-    /**
-     * 读取 API Key：
-     * 1. 优先读取 Keystore/DPAPI 加密后的密文并解密；
-     * 2. 若只有旧版明文，自动迁移到密文存储并删除明文。
-     */
-    private fun readApiKey(): String? {
-        prefs.getString(KEY_AI_API_KEY_ENCRYPTED, null)?.let { stored ->
-            return secureSecretStore.decrypt(stored)
-        }
-        val legacy = prefs.getString(KEY_AI_API_KEY_LEGACY, null) ?: return null
-        val encrypted = try {
-            secureSecretStore.encrypt(legacy)
-        } catch (e: Exception) {
-            AppLogger.e("PreferencesManager", "迁移旧 API Key 加密失败，继续使用旧值", e)
-            null
-        }
-        if (encrypted != null) {
-            prefs.putString(KEY_AI_API_KEY_ENCRYPTED, encrypted)
-            prefs.remove(KEY_AI_API_KEY_LEGACY)
-        }
-        return legacy
-    }
 
     var aiStreamEnabled: Boolean
         get() = prefs.getBoolean("ai_stream_enabled", true)
         set(value) = prefs.putBoolean("ai_stream_enabled", value)
 
-    // 思考强度: "off"(不思考) / "high" / "max"
-    var aiReasoningEffort: String?
-        get() = prefs.getString("ai_reasoning_effort", "high")
-        set(value) = prefs.putString("ai_reasoning_effort", value)
+    // 思考强度: none(不思考) / low / high / max
+    // 兼容旧值 off / minimal / medium / xhigh / ultra，读取时统一归一化
+    var aiReasoningEffort: String
+        get() = DeepSeekApi.normalizeEffort(prefs.getString("ai_reasoning_effort", DeepSeekApi.DEFAULT_EFFORT))
+        set(value) = prefs.putString("ai_reasoning_effort", DeepSeekApi.normalizeEffort(value))
 
     // AI 打开网页：true=提取正文纯文本（默认，省 Token）；false=返回原始 HTML
     var aiFetchPlainText: Boolean
@@ -149,4 +128,46 @@ class PreferencesManager {
     var bulkEvictChapters: Int
         get() = prefs.getInt("bulk_evict_chapters", 20)
         set(value) = prefs.putInt("bulk_evict_chapters", value)
+
+    // ── 上下文注入 / 系统提示词注入：全局默认值 ──
+    // 工作区与单对话可在设置页 / 编辑器快捷设置中各自覆盖
+
+    /** 是否启用自动上下文注入 */
+    var injectionContextEnabled: Boolean
+        get() = prefs.getBoolean("injection_context_enabled", false)
+        set(value) = prefs.putBoolean("injection_context_enabled", value)
+
+    /** 每经过 N 次模型回复后注入一次 */
+    var injectionContextSteps: Int
+        get() = prefs.getInt("injection_context_steps", ConversationSettingsManager.DEFAULT_INJECTION_STEPS)
+        set(value) = prefs.putInt("injection_context_steps", value.coerceAtLeast(1))
+
+    /** 注入的上下文内容 */
+    var injectionContextText: String?
+        get() = prefs.getString("injection_context_text", null)
+        set(value) = prefs.putString("injection_context_text", value)
+
+    /** 是否启用自定义系统提示词注入 */
+    var injectionSystemPromptEnabled: Boolean
+        get() = prefs.getBoolean("injection_system_prompt_enabled", false)
+        set(value) = prefs.putBoolean("injection_system_prompt_enabled", value)
+
+    /** 自定义系统提示词内容（追加到系统提示词末尾，随时可改） */
+    var injectionSystemPromptText: String?
+        get() = prefs.getString("injection_system_prompt_text", null)
+        set(value) = prefs.putString("injection_system_prompt_text", value)
+
+    // 注：曾有一项 global customBasePrompt（全局默认基础提示词），它没有任何 UI 能写入，
+    // 属于死代码；基础提示词的优先级已简化为「项目自定义 → 内置模板」（见 SystemPromptManager）。
+    // 这里在读取时顺手清理历史残留键，避免旧数据迷惑排查。
+
+    // ── 上下文注入：每个对话已累计的模型回复步数 ──
+    // 用于「每 N 步注入一次」的计数，跨重启保持
+
+    fun getInjectionStepCounter(projectId: String, tabId: Int): Int =
+        prefs.getInt("injection_steps_${projectId}_$tabId", 0)
+
+    fun setInjectionStepCounter(projectId: String, tabId: Int, value: Int) {
+        prefs.putInt("injection_steps_${projectId}_$tabId", value)
+    }
 }

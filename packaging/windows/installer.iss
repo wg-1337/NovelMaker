@@ -1,7 +1,7 @@
-; NovelMaker Windows 现代安装包（Inno Setup 6）
+﻿; NovelMaker Windows 现代安装包（Inno Setup 6）
 ; 自动检测简体中文语言文件：存在则使用中文界面，否则使用英文
 #define MyAppName "NovelMaker"
-#define MyAppVersion "1.6.0"
+#define MyAppVersion "1.7.0"
 #define MyAppPublisher "wg-1337"
 #define MyAppExeName "novelmaker.exe"
 #define hasChinese FileExists("C:\Program Files (x86)\Inno Setup 6\Languages\ChineseSimplified.isl")

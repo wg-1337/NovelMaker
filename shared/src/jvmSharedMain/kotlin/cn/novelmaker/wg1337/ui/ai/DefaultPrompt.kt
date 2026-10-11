@@ -1,7 +1,9 @@
 package cn.novelmaker.wg1337.ui.ai
 
 /**
- * 默认AI系统提示词（内置模板，不再写入项目文件夹）
+ * 默认AI系统提示词（内置模板）
+ *
+ * 由 SystemPromptManager 提供，用户可在设置 →「AI 写作设置 → 系统提示词」中随时修改。
  */
 object DefaultPrompt {
 

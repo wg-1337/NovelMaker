@@ -199,7 +199,7 @@ private fun PermissionPage(hasPermission: Boolean) {
         Text("管理文件权限", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Spacer(Modifier.height(16.dp))
         Text(
-            if (hasPermission) "权限已授予 ✓\n可以正常保存小说文件"
+            if (hasPermission) "权限已授予\n可以正常保存小说文件"
             else "为了保存你的小说作品和素材\n我们需要你授予管理所有文件的权限\n你的数据仅保存在本地，请放心使用",
             style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
